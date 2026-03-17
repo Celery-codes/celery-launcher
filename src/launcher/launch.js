@@ -3,58 +3,51 @@ const path = require('path');
 const fs = require('fs');
 
 const AIKAR_FLAGS = [
-  '-XX:+UseG1GC','-XX:+ParallelRefProcEnabled','-XX:MaxGCPauseMillis=200',
-  '-XX:+UnlockExperimentalVMOptions','-XX:+DisableExplicitGC','-XX:+AlwaysPreTouch',
-  '-XX:G1NewSizePercent=30','-XX:G1MaxNewSizePercent=40','-XX:G1HeapRegionSize=8M',
-  '-XX:G1ReservePercent=20','-XX:G1HeapWastePercent=5','-XX:G1MixedGCCountTarget=4',
-  '-XX:InitiatingHeapOccupancyPercent=15','-XX:G1MixedGCLiveThresholdPercent=90',
-  '-XX:G1RSetUpdatingPauseTimePercent=5','-XX:SurvivorRatio=32',
-  '-XX:+PerfDisableSharedMem','-XX:MaxTenuringThreshold=1',
-  '-Dusing.aikars.flags=https://mcflags.emc.gs','-Daikars.new.flags=true'
+  '-XX:+UseG1GC',
+  '-XX:+ParallelRefProcEnabled',
+  '-XX:MaxGCPauseMillis=200',
+  '-XX:+UnlockExperimentalVMOptions',
+  '-XX:+DisableExplicitGC',
+  '-XX:+AlwaysPreTouch',
+  '-XX:G1NewSizePercent=30',
+  '-XX:G1MaxNewSizePercent=40',
+  '-XX:G1HeapRegionSize=8M',
+  '-XX:G1ReservePercent=20',
+  '-XX:G1HeapWastePercent=5',
+  '-XX:G1MixedGCCountTarget=4',
+  '-XX:InitiatingHeapOccupancyPercent=15',
+  '-XX:G1MixedGCLiveThresholdPercent=90',
+  '-XX:G1RSetUpdatingPauseTimePercent=5',
+  '-XX:SurvivorRatio=32',
+  '-XX:+PerfDisableSharedMem',
+  '-XX:MaxTenuringThreshold=1',
+  '-Dusing.aikars.flags=https://mcflags.emc.gs',
+  '-Daikars.new.flags=true'
 ];
 
 async function launchMinecraft(instance, account, settings, onLog, onClose) {
   const { VERSIONS_DIR, ASSETS_DIR, LIBRARIES_DIR, INSTANCES_DIR } = global.paths;
   const { mcVersion, loader, loaderVersion, id: instanceId } = instance;
 
-  // ── Token refresh — fixes "Invalid session" on multiplayer ────────────────
-  // The mcToken expires after ~24h. We always do a full refresh chain before
-  // launch to guarantee a fresh token. This is what the official launcher does.
-  let activeAccount = account;
-  onLog('[Celery] Refreshing session token...\n');
-  try {
-    const { refreshToken } = require('../auth/microsoft');
-    activeAccount = await refreshToken(account);
-    // Persist updated token so future launches use it
-    const Store = require('electron-store');
-    const s = new Store();
-    const accounts = s.get('accounts', []);
-    const idx = accounts.findIndex(a => a.uuid === activeAccount.uuid);
-    if (idx >= 0) accounts[idx] = activeAccount;
-    s.set('accounts', accounts);
-    onLog('[Celery] Session token refreshed — multiplayer ready.\n');
-  } catch (e) {
-    onLog(`[Celery] Token refresh failed: ${e.message}\n`);
-    onLog('[Celery] Continuing with existing token. If multiplayer fails, re-login via Accounts tab.\n');
-    // Fall through — singleplayer still works with the old token
-  }
-
   const instanceDir = path.join(INSTANCES_DIR, instanceId);
   const modsDir     = path.join(instanceDir, 'mods');
   const nativesDir  = path.join(instanceDir, 'natives');
+
   [instanceDir, modsDir, nativesDir].forEach(d => {
     if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
   });
 
   const versionJson = path.join(VERSIONS_DIR, mcVersion, `${mcVersion}.json`);
-  if (!fs.existsSync(versionJson)) throw new Error(`Version ${mcVersion} not downloaded.`);
+  if (!fs.existsSync(versionJson)) throw new Error(`Version ${mcVersion} not downloaded. Launch will download it.`);
   const manifest = JSON.parse(fs.readFileSync(versionJson, 'utf8'));
 
   let fabricProfile = null;
   if ((loader === 'Fabric' || loader === 'Quilt') && loaderVersion) {
     const fabricId   = `${mcVersion}-fabric-${loaderVersion}`;
     const fabricJson = path.join(VERSIONS_DIR, fabricId, `${fabricId}.json`);
-    if (fs.existsSync(fabricJson)) fabricProfile = JSON.parse(fs.readFileSync(fabricJson, 'utf8'));
+    if (fs.existsSync(fabricJson)) {
+      fabricProfile = JSON.parse(fs.readFileSync(fabricJson, 'utf8'));
+    }
   }
 
   const classpath = buildClasspath(manifest, fabricProfile, VERSIONS_DIR, LIBRARIES_DIR, mcVersion);
@@ -63,16 +56,24 @@ async function launchMinecraft(instance, account, settings, onLog, onClose) {
   const mainClass  = fabricProfile?.mainClass || manifest.mainClass;
   const assetIndex = manifest.assetIndex.id;
   const ram        = settings.ram || 4;
-  const javaPath   = (settings.javaPath && settings.javaPath.trim()) || findJava();
-  const javaVer    = detectJavaVersion(javaPath);
 
-  const jvmArgs = [`-Xmx${ram}G`, `-Xms${ram}G`];
+  const javaPath = settings.javaPath || findJava();
+  const javaVer  = detectJavaVersion(javaPath);
+
+  const jvmArgs = [
+    `-Xmx${ram}G`,
+    `-Xms${ram}G`,
+  ];
 
   if (settings.pvpFlags !== false) {
     jvmArgs.push(...AIKAR_FLAGS);
-    if (javaVer < 20) jvmArgs.push('-XX:+AggressiveHeap');
+    if (javaVer < 20) {
+      jvmArgs.push('-XX:+AggressiveHeap');
+    }
     jvmArgs.push(
-      '-XX:+UseStringDeduplication','-XX:+OptimizeStringConcat',
+      '-XX:+UseStringDeduplication',
+      '-XX:+OptimizeStringConcat',
+      '-XX:+UseCompressedOops',
       '-Dlog4j2.formatMsgNoLookups=true',
       '-Dfml.ignorePatchDiscrepancies=true',
       '-Dfml.ignoreInvalidMinecraftCertificates=true'
@@ -87,10 +88,29 @@ async function launchMinecraft(instance, account, settings, onLog, onClose) {
   );
 
   if (settings.customJvmArgs) {
-    jvmArgs.push(...settings.customJvmArgs.split(/\s+/).filter(Boolean));
+    const custom = settings.customJvmArgs.split(/\s+/).filter(Boolean);
+    jvmArgs.push(...custom);
   }
 
-  // Use activeAccount (refreshed) — this has the fresh mcToken
+  // ── Refresh token before every launch — fixes Invalid Session on multiplayer ──
+  // Mojang's session servers reject stale tokens. We always refresh before launch.
+  let activeAccount = account;
+  onLog('[Celery] Refreshing session token...\n');
+  try {
+    const { refreshToken } = require('../auth/microsoft');
+    activeAccount = await refreshToken(account);
+    const Store = require('electron-store');
+    const s = new Store();
+    const accs = s.get('accounts', []);
+    const idx = accs.findIndex(a => a.uuid === activeAccount.uuid);
+    if (idx >= 0) accs[idx] = activeAccount;
+    s.set('accounts', accs);
+    onLog('[Celery] Token refreshed — multiplayer ready.\n');
+  } catch (e) {
+    onLog('[Celery] Token refresh failed: ' + e.message + '\n');
+    onLog('[Celery] Continuing — if multiplayer fails, re-login via Accounts tab.\n');
+  }
+
   const gameArgs = buildGameArgs(manifest, activeAccount, instanceDir, assetIndex, ASSETS_DIR, mcVersion);
   const fullArgs = [...jvmArgs, '-cp', classpath, mainClass, ...gameArgs];
 
@@ -99,13 +119,15 @@ async function launchMinecraft(instance, account, settings, onLog, onClose) {
   onLog(`[Celery] RAM: ${ram}GB  |  PvP flags: ${settings.pvpFlags !== false ? 'ON' : 'OFF'}\n`);
 
   const proc = spawn(javaPath, fullArgs, {
-    cwd: instanceDir, detached: true, stdio: ['ignore', 'pipe', 'pipe']
+    cwd: instanceDir,
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe']
   });
 
   proc.stdout.on('data', d => onLog(d.toString()));
   proc.stderr.on('data', d => onLog(d.toString()));
   proc.on('close', code => { onLog(`\n[Celery] Game exited (code ${code})\n`); onClose(code); });
-  proc.on('error', err  => { onLog(`\n[Celery] Failed to start: ${err.message}\n`); onClose(-1); });
+  proc.on('error', err => { onLog(`\n[Celery] Failed to start: ${err.message}\n`); onClose(-1); });
   proc.unref();
   return proc;
 }
@@ -113,18 +135,20 @@ async function launchMinecraft(instance, account, settings, onLog, onClose) {
 function buildClasspath(manifest, fabricProfile, versionsDir, librariesDir, mcVersion) {
   const sep   = process.platform === 'win32' ? ';' : ':';
   const paths = new Set();
-  const allLibs = [...(manifest.libraries||[]), ...(fabricProfile?.libraries||[])];
+
+  const allLibs = [...(manifest.libraries || []), ...(fabricProfile?.libraries || [])];
 
   for (const lib of allLibs) {
     if (lib.rules) {
-      const ok = lib.rules.every(r => {
-        const os = r.os?.name;
-        if (r.action === 'allow')    return !os || os === 'windows';
-        if (r.action === 'disallow') return !os || os !== 'windows';
+      const allowed = lib.rules.every(rule => {
+        const os = rule.os?.name;
+        if (rule.action === 'allow')    return !os || os === 'windows';
+        if (rule.action === 'disallow') return !os || os !== 'windows';
         return true;
       });
-      if (!ok) continue;
+      if (!allowed) continue;
     }
+
     if (lib.downloads?.artifact) {
       const p = path.join(librariesDir, lib.downloads.artifact.path);
       if (fs.existsSync(p)) paths.add(p);
@@ -132,8 +156,8 @@ function buildClasspath(manifest, fabricProfile, versionsDir, librariesDir, mcVe
       const parts = lib.name.split(':');
       if (parts.length >= 3) {
         const [group, artifact, version] = parts;
-        const full = path.join(librariesDir,
-          `${group.replace(/\./g,'/')}/${artifact}/${version}/${artifact}-${version}.jar`);
+        const rel  = `${group.replace(/\./g,'/')}/${artifact}/${version}/${artifact}-${version}.jar`;
+        const full = path.join(librariesDir, rel);
         if (fs.existsSync(full)) paths.add(full);
       }
     }
@@ -141,6 +165,7 @@ function buildClasspath(manifest, fabricProfile, versionsDir, librariesDir, mcVe
 
   const clientJar = path.join(versionsDir, mcVersion, `${mcVersion}.jar`);
   if (fs.existsSync(clientJar)) paths.add(clientJar);
+
   return [...paths].join(sep);
 }
 
@@ -157,7 +182,7 @@ async function extractNatives(libraries, librariesDir, nativesDir) {
     try {
       await extract(libPath, {
         dir: nativesDir,
-        onEntry: e => { if (e.fileName.includes('META-INF')) e.autodrain(); }
+        onEntry: (entry) => { if (entry.fileName.includes('META-INF')) entry.autodrain(); }
       });
     } catch {}
   }
@@ -183,15 +208,15 @@ function buildGameArgs(manifest, account, gameDir, assetIndex, assetsDir, mcVers
 
   for (const arg of template) {
     if (typeof arg === 'string') {
-      let r = arg;
-      for (const [k,v] of Object.entries(replacements)) r = r.replaceAll(k, v);
-      args.push(r);
+      let resolved = arg;
+      for (const [k, v] of Object.entries(replacements)) resolved = resolved.replaceAll(k, v);
+      args.push(resolved);
     } else if (arg?.rules) {
-      const ok = arg.rules.every(r => r.action !== 'allow' || !r.features);
-      if (ok && arg.value) {
+      const allowed = arg.rules.every(r => r.action !== 'allow' || !r.features);
+      if (allowed && arg.value) {
         const vals = Array.isArray(arg.value) ? arg.value : [arg.value];
         for (let v of vals) {
-          for (const [k,rv] of Object.entries(replacements)) v = v.replaceAll(k, rv);
+          for (const [k, rv] of Object.entries(replacements)) v = v.replaceAll(k, rv);
           args.push(v);
         }
       }
@@ -204,30 +229,38 @@ function detectJavaVersion(javaPath) {
   try {
     const { execSync } = require('child_process');
     const out = execSync(`"${javaPath}" -version 2>&1`, { timeout: 3000 }).toString();
-    const m = out.match(/version "(\d+)/);
-    if (m) { const v = parseInt(m[1]); return v === 1 ? parseInt(out.match(/version "1\.(\d+)/)?.[1]||'8') : v; }
+    const match = out.match(/version "(\d+)/);
+    if (match) {
+      const v = parseInt(match[1]);
+      return v === 1 ? parseInt(out.match(/version "1\.(\d+)/)?.[1] || '8') : v;
+    }
   } catch {}
   return 21;
 }
 
 function findJava() {
   const envHome = process.env.JAVA_HOME;
-  if (envHome) { const e = path.join(envHome,'bin','java.exe'); if (fs.existsSync(e)) return e; }
-  const adoptBase = 'C:\\Program Files\\Eclipse Adoptium';
-  if (fs.existsSync(adoptBase)) {
-    for (const dir of fs.readdirSync(adoptBase).reverse()) {
-      const e = path.join(adoptBase, dir, 'bin', 'java.exe');
-      if (fs.existsSync(e)) return e;
-    }
+  if (envHome) {
+    const exe = path.join(envHome, 'bin', 'java.exe');
+    if (fs.existsSync(exe)) return exe;
   }
-  for (const c of [
+  const candidates = [
     'C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.6.7-hotspot\\bin\\java.exe',
     'C:\\Program Files\\Eclipse Adoptium\\jdk-21\\bin\\java.exe',
     'C:\\Program Files\\Microsoft\\jdk-21.0.6.7-hotspot\\bin\\java.exe',
     'C:\\Program Files\\Java\\jdk-21\\bin\\java.exe',
+    'C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.13.11-hotspot\\bin\\java.exe',
     'C:\\Program Files\\Eclipse Adoptium\\jdk-17\\bin\\java.exe',
     'C:\\Program Files\\Java\\jdk-17\\bin\\java.exe',
-  ]) if (fs.existsSync(c)) return c;
+  ];
+  const adoptBase = 'C:\\Program Files\\Eclipse Adoptium';
+  if (fs.existsSync(adoptBase)) {
+    for (const dir of fs.readdirSync(adoptBase).reverse()) {
+      const exe = path.join(adoptBase, dir, 'bin', 'java.exe');
+      if (fs.existsSync(exe)) return exe;
+    }
+  }
+  for (const c of candidates) if (fs.existsSync(c)) return c;
   return 'java';
 }
 

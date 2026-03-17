@@ -7,13 +7,16 @@ let consoleLineLimit = 5000;
 function initConsole() {
   if (window._consoleListenerAttached) return;
   window._consoleListenerAttached = true;
-  window.launcher.onGameLog(raw => appendConsoleLine(raw));
+
+  window.launcher.onGameLog((raw) => { appendConsoleLine(raw); });
+
   window.launcher.onGameClosed(() => {
-    appendConsoleLine('[Celery] Game process exited.\n', 'system');
+    appendConsoleLine('[CeleryLauncher] Game process exited.\n', 'system');
     const badge = document.getElementById('consoleBadge');
     if (badge) badge.style.display = 'none';
   });
-  window.launcher.onLaunchStatus(data => {
+
+  window.launcher.onLaunchStatus((data) => {
     if (data.status === 'running') {
       const badge = document.getElementById('consoleBadge');
       if (badge) badge.style.display = 'inline-block';
@@ -23,74 +26,24 @@ function initConsole() {
 
 function appendConsoleLine(raw, forceLevel) {
   if (!raw) return;
-  const newLines = [];
-  for (const line of raw.split(/\r?\n/)) {
+  const lines = raw.split(/\r?\n/);
+  let changed = false;
+  for (const line of lines) {
     if (!line.trim()) continue;
-    const parsed = parseLogLine(line, forceLevel);
-    consoleLines.push(parsed);
-    newLines.push(parsed);
+    consoleLines.push(parseLogLine(line, forceLevel));
+    changed = true;
   }
-  if (!newLines.length) return;
-  if (consoleLines.length > consoleLineLimit) consoleLines = consoleLines.slice(-consoleLineLimit);
-
-  // Update line count
-  const countEl = document.getElementById('consoleLineCount');
-  if (countEl) countEl.textContent = consoleLines.length + ' lines';
-
-  // Append directly to DOM — never rebuild innerHTML, preserves scroll
-  _appendLinesToOutput('conOut', newLines);
-  _appendLinesToOutput('inlineConOut', newLines, 300);
-}
-
-function _appendLinesToOutput(id, newLines, trimTo) {
-  const out = document.getElementById(id);
-  if (!out) return;
-
-  // Remove empty-state placeholder if present
-  const empty = out.querySelector('.con-empty');
-  if (empty) out.innerHTML = '';
-
-  const sq = consoleSearch
-    ? consoleSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    : null;
-
-  const frag = document.createDocumentFragment();
-  for (const line of newLines) {
-    if (consoleFilter !== 'all' && line.level !== consoleFilter) continue;
-    if (consoleSearch && !line.raw.toLowerCase().includes(consoleSearch.toLowerCase())) continue;
-    frag.appendChild(_buildLineEl(line, sq));
+  if (!changed) return;
+  if (consoleLines.length > consoleLineLimit) {
+    consoleLines = consoleLines.slice(-consoleLineLimit);
   }
-  out.appendChild(frag);
-
-  // Trim inline console to avoid unbounded growth
-  if (trimTo) {
-    while (out.children.length > trimTo) out.removeChild(out.firstChild);
-  }
-
-  // Scroll AFTER paint so scrollHeight is correct
-  if (consoleAutoScroll) {
-    requestAnimationFrame(() => { out.scrollTop = out.scrollHeight; });
-  }
-}
-
-function _buildLineEl(line, searchQuery) {
-  const div = document.createElement('div');
-  div.className = 'con-line con-' + line.level;
-  const ts = document.createElement('span');
-  ts.className = 'con-ts';
-  ts.textContent = line.ts;
-  div.appendChild(ts);
-  const body = document.createElement('span');
-  body.innerHTML = searchQuery
-    ? line.html.replace(new RegExp(`(${searchQuery})`, 'gi'), '<mark class="con-mark">$1</mark>')
-    : line.html;
-  div.appendChild(body);
-  return div;
+  flushConsoleToDOM();
 }
 
 function parseLogLine(raw, forceLevel) {
   const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
   let level = forceLevel || 'info';
+
   const mcMatch = raw.match(/\[(FATAL|ERROR|WARN|INFO|DEBUG|TRACE)\]/i);
   if (mcMatch) {
     const lvl = mcMatch[1].toUpperCase();
@@ -99,109 +52,98 @@ function parseLogLine(raw, forceLevel) {
     else if (lvl === 'DEBUG' || lvl === 'TRACE') level = 'debug';
     else level = 'info';
   }
+
   if (/\[CHAT\]/i.test(raw) || /\[\d{2}:\d{2}:\d{2}\].*<[A-Za-z0-9_]{1,16}>/.test(raw)) level = 'chat';
   if (/^\[Celery(?:Launcher)?\]/.test(raw)) level = 'system';
   if (/^\s+(at |Caused by:|\.{3}\s*\d)/.test(raw)) level = 'trace';
+
   return { raw, html: colorize(escHtml(raw), level), level, ts };
 }
 
 function colorize(html, level) {
-  html = html.replace(/\[(FATAL|ERROR)\]/g,   '<b class="cl-error">[$1]</b>');
-  html = html.replace(/\[(WARN)\]/g,           '<b class="cl-warn">[$1]</b>');
-  html = html.replace(/\[(INFO)\]/g,           '<b class="cl-info">[$1]</b>');
-  html = html.replace(/\[(DEBUG|TRACE)\]/g,    '<b class="cl-debug">[$1]</b>');
+  html = html.replace(/\[(FATAL|ERROR)\]/g,  '<span class="cl-error">[$1]</span>');
+  html = html.replace(/\[(WARN)\]/g,          '<span class="cl-warn">[$1]</span>');
+  html = html.replace(/\[(INFO)\]/g,          '<span class="cl-info">[$1]</span>');
+  html = html.replace(/\[(DEBUG|TRACE)\]/g,   '<span class="cl-debug">[$1]</span>');
   html = html.replace(/^(\[\d{2}:\d{2}:\d{2}\])/g, '<span class="cl-ts">$1</span>');
-  html = html.replace(/(\[[^\]]+?\/(?:INFO|WARN|ERROR|DEBUG|TRACE|FATAL)\])/g, '<span class="cl-thread">$1</span>');
-  html = html.replace(/(\b\w+Exception\b)/g,   '<span class="cl-error">$1</span>');
+  html = html.replace(/(\b\w+Exception\b)/g,  '<span class="cl-error">$1</span>');
   html = html.replace(/(&lt;[A-Za-z0-9_]{1,16}&gt;)/g, '<span class="cl-chat">$1</span>');
-  html = html.replace(/\b(Loading|Loaded|Starting|Started|Done|Initialized|Preparing)\b/g, '<span class="cl-ok">$1</span>');
+  html = html.replace(/\b(Loading|Loaded|Starting|Started|Done|Initialized)\b/g, '<span class="cl-ok">$1</span>');
   html = html.replace(/(\[Celery(?:Launcher)?\])/g, '<span class="cl-launcher">$1</span>');
   return html;
-}
-
-function _rebuildOutput(id, trimTo) {
-  const out = document.getElementById(id);
-  if (!out) return;
-  out.innerHTML = '';
-  const lines = trimTo ? filteredLines().slice(-trimTo) : filteredLines();
-  if (!lines.length) {
-    out.innerHTML = `<div class="con-empty">${
-      consoleLines.length === 0 ? 'No output yet — launch a game to see logs here.' : 'No lines match the filter.'
-    }</div>`;
-    return;
-  }
-  const sq = consoleSearch ? consoleSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : null;
-  const frag = document.createDocumentFragment();
-  for (const line of lines) frag.appendChild(_buildLineEl(line, sq));
-  out.appendChild(frag);
-  requestAnimationFrame(() => { out.scrollTop = out.scrollHeight; });
 }
 
 function renderConsolePanel() {
   const panel = document.getElementById('panel-console');
   if (!panel) return;
+
   panel.innerHTML = `
     <div class="con-bar">
       <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
         <span class="con-title">Console</span>
         <span class="con-count" id="consoleLineCount">${consoleLines.length} lines</span>
       </div>
-      <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
-        <div style="display:flex;gap:3px;">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <div style="display:flex;gap:3px;" id="conFilterBtns">
           ${['all','info','warn','error','debug','chat','system'].map(f => `
             <button class="clf ${consoleFilter===f?'on':''}" data-f="${f}" onclick="setConFilter('${f}')">${
               {all:'All',info:'Info',warn:'Warn',error:'Error',debug:'Debug',chat:'Chat',system:'System'}[f]
-            }</button>`).join('')}
+            }</button>
+          `).join('')}
         </div>
         <input class="sbox" id="conSearch" placeholder="Search…" value="${escHtml(consoleSearch)}"
-          oninput="setConSearch(this.value)" style="width:140px;">
+          oninput="setConSearch(this.value)" style="width:150px;">
         <button class="btn ${consoleAutoScroll?'p':''}" id="conScrollBtn" onclick="toggleConScroll()" title="Auto-scroll">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 2V11M4 8L8 12L12 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <button class="btn" onclick="clearConsole()">
+        <button class="btn" onclick="clearConsole()" title="Clear">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 3L13 13M13 3L3 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          Clear
         </button>
-        <button class="btn" onclick="copyConsole()">
+        <button class="btn" onclick="copyConsole()" title="Copy all">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M3 11V3C3 2.45 3.45 2 4 2H11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-          Copy
         </button>
-        <button class="btn" onclick="openLogFolder()">
+        <button class="btn" onclick="openLogFolder ? openLogFolder() : saveConsoleLog()" title="Logs folder">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7.5 5H12.5C13.33 5 14 5.67 14 6.5V12.5C14 13.33 13.33 14 12.5 14H3.5C2.67 14 2 13.33 2 12.5V4.5Z" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
-          Logs
-        </button>
-        <button class="btn" onclick="clearLogFolder()">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 4H13M5 4V3H11V4M6 7V12M10 7V12M4 4L5 13H11L12 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-          Clear logs
         </button>
       </div>
     </div>
     <div class="con-out" id="conOut"></div>
   `;
-  _rebuildOutput('conOut');
+
+  flushConsoleToDOM();
   initConsole();
 }
 
-function renderInlineConsole(container) {
-  container.innerHTML = `
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
-      <span class="con-count" id="inlineConCount">${consoleLines.length} lines</span>
-      <div style="display:flex;gap:3px;">
-        ${['all','error','warn','chat','system'].map(f => `
-          <button class="clf ${consoleFilter===f?'on':''}" data-f="${f}" onclick="setConFilter('${f}')">${
-            {all:'All',error:'Err',warn:'Warn',chat:'Chat',system:'Sys'}[f]
-          }</button>`).join('')}
-      </div>
-      <input class="sbox" placeholder="Search…" oninput="setConSearch(this.value)"
-        style="flex:1;min-width:80px;">
-      <button class="btn ${consoleAutoScroll?'p':''}" onclick="toggleConScroll()" style="padding:4px 8px;">
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 2V11M4 8L8 12L12 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-      <button class="btn" onclick="openConsolePanel()" style="font-size:0.72em;padding:4px 10px;">Full console ↗</button>
-    </div>
-    <div class="con-out" id="inlineConOut" style="height:280px;border-radius:var(--radius-sm);border:1px solid var(--border);"></div>
-  `;
-  _rebuildOutput('inlineConOut', 200);
+function flushConsoleToDOM() {
+  const out = document.getElementById('conOut');
+  if (!out) return;
+
+  const el = document.getElementById('consoleLineCount');
+  if (el) el.textContent = consoleLines.length + ' lines';
+
+  const filtered = filteredLines();
+
+  if (filtered.length === 0) {
+    out.innerHTML = `<div class="con-empty">${
+      consoleLines.length === 0
+        ? 'No output yet — launch a game to see logs here.'
+        : 'No lines match the current filter.'
+    }</div>`;
+    return;
+  }
+
+  const sq = consoleSearch ? consoleSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : null;
+
+  out.innerHTML = filtered.map(line => {
+    let content = line.html;
+    if (sq) content = content.replace(new RegExp(`(${sq})`, 'gi'), '<mark class="con-mark">$1</mark>');
+    return `<div class="con-line con-${line.level}"><span class="con-ts">${line.ts}</span>${content}</div>`;
+  }).join('');
+
+  // Use requestAnimationFrame so scroll happens after the DOM has painted
+  if (consoleAutoScroll) {
+    requestAnimationFrame(() => { out.scrollTop = out.scrollHeight; });
+  }
 }
 
 function filteredLines() {
@@ -217,49 +159,40 @@ function filteredLines() {
 function setConFilter(f) {
   consoleFilter = f;
   document.querySelectorAll('.clf').forEach(b => b.classList.toggle('on', b.dataset.f === f));
-  _rebuildOutput('conOut');
-  _rebuildOutput('inlineConOut', 200);
+  flushConsoleToDOM();
 }
 
 function setConSearch(val) {
   consoleSearch = val;
-  _rebuildOutput('conOut');
-  _rebuildOutput('inlineConOut', 200);
+  flushConsoleToDOM();
 }
 
 function toggleConScroll() {
   consoleAutoScroll = !consoleAutoScroll;
-  document.getElementById('conScrollBtn')?.classList.toggle('p', consoleAutoScroll);
+  const btn = document.getElementById('conScrollBtn');
+  if (btn) btn.classList.toggle('p', consoleAutoScroll);
   if (consoleAutoScroll) {
-    requestAnimationFrame(() => {
-      const o = document.getElementById('conOut'); if (o) o.scrollTop = o.scrollHeight;
-      const i = document.getElementById('inlineConOut'); if (i) i.scrollTop = i.scrollHeight;
-    });
+    const out = document.getElementById('conOut');
+    if (out) requestAnimationFrame(() => { out.scrollTop = out.scrollHeight; });
   }
 }
 
-function clearConsole() {
-  consoleLines = [];
-  _rebuildOutput('conOut');
-  _rebuildOutput('inlineConOut', 200);
-  const c = document.getElementById('consoleLineCount'); if (c) c.textContent = '0 lines';
-}
+function clearConsole() { consoleLines = []; flushConsoleToDOM(); }
 
 function copyConsole() {
   const text = filteredLines().map(l => `[${l.ts}] ${l.raw}`).join('\n');
-  navigator.clipboard.writeText(text)
-    .then(() => toast('Copied ' + filteredLines().length + ' lines'))
-    .catch(() => toast('Copy failed'));
+  navigator.clipboard.writeText(text).then(() => toast('Copied ' + filteredLines().length + ' lines')).catch(() => toast('Copy failed'));
+}
+
+async function saveConsoleLog() {
+  const text = consoleLines.map(l => `[${l.ts}] ${l.raw}`).join('\n');
+  const result = await window.launcher.saveLogFile(text);
+  if (result && result.success) toast('Log saved: ' + result.path);
+  else toast('Save failed: ' + ((result && result.error) || 'unknown'));
 }
 
 async function openLogFolder() {
-  await window.launcher.openLogFolder();
-}
-
-async function clearLogFolder() {
-  const result = await window.launcher.clearLogFolder();
-  if (result && result.success) toast('Log files cleared');
-  else toast('Failed: ' + ((result && result.error) || 'unknown'));
+  if (window.launcher.openLogFolder) await window.launcher.openLogFolder();
 }
 
 function openConsolePanel() {
