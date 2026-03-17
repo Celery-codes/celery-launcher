@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com 'self'; connect-src https:;">
+  <title>Celery Launcher</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="console.css">
+</head>
+<body>
+  <div id="app">
+    <div class="titlebar" id="titlebar">
+      <div class="titlebar-left">
+        <div class="logo-mark">C</div>
+        <span class="app-name">Celery Launcher</span>
+        <span class="app-ver">v2.0.0</span>
+      </div>
+      <div class="titlebar-drag"></div>
+      <div class="win-btns">
+        <div class="wb min" onclick="window.launcher.minimize()"></div>
+        <div class="wb max" onclick="window.launcher.maximize()"></div>
+        <div class="wb cls" onclick="window.launcher.close()"></div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="sidebar">
+        <div class="s-sect">
+          <div class="s-label">Play</div>
+          <div class="nav on" id="nav-instances" onclick="showPanel('instances',this)">
+            <svg class="ni" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".9"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".9"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".9"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".9"/></svg>
+            Instances
+          </div>
+          <div class="nav" id="nav-mods" onclick="showPanel('mods',this)">
+            <svg class="ni" viewBox="0 0 16 16" fill="none"><path d="M8 1L14 4.5V11.5L8 15L2 11.5V4.5L8 1Z" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M8 1V15M2 4.5L14 11.5M14 4.5L2 11.5" stroke="currentColor" stroke-width=".8" opacity=".5"/></svg>
+            Mods &amp; Resources
+          </div>
+          <div class="nav" id="nav-modpacks" onclick="showPanel('modpacks',this)">
+            <svg class="ni" viewBox="0 0 16 16" fill="none"><rect x="1" y="4" width="14" height="10" rx="1.5" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M5 4V2.5C5 1.67 5.67 1 6.5 1H9.5C10.33 1 11 1.67 11 2.5V4" stroke="currentColor" stroke-width="1.2"/><path d="M5 9H11M8 7V11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            Modpacks
+          </div>
+          <div class="nav" id="nav-console" onclick="showPanel('console',this)">
+            <svg class="ni" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M4 6L7 8L4 10M8 10H12" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Console
+            <span class="nav-badge" id="consoleBadge"></span>
+          </div>
+        </div>
+        <div class="s-sect">
+          <div class="s-label">Manage</div>
+          <div class="nav" id="nav-accounts" onclick="showPanel('accounts',this)">
+            <svg class="ni" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5" r="3" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M2 14C2 11.24 4.69 9 8 9C11.31 9 14 11.24 14 14" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            Accounts
+          </div>
+          <div class="nav" id="nav-settings" onclick="showPanel('settings',this)">
+            <svg class="ni" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M8 1.5V3M8 13V14.5M1.5 8H3M13 8H14.5M3.2 3.2L4.2 4.2M11.8 11.8L12.8 12.8M3.2 12.8L4.2 11.8M11.8 4.2L12.8 3.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            Settings
+          </div>
+        </div>
+        <div class="acc-area">
+          <button class="acc-btn" id="activeAccountBtn" onclick="showPanel('accounts',document.getElementById('nav-accounts'))">
+            <div class="acc-av" id="sidebarAvatar">?</div>
+            <div>
+              <div class="acc-name" id="sidebarUsername">Not logged in</div>
+              <div class="acc-type" id="sidebarAccountType">Click to add account</div>
+            </div>
+            <div class="acc-chev">⌄</div>
+          </button>
+        </div>
+      </div>
+
+      <div class="main" id="mainContent">
+        <div id="panel-instances" class="panel on"></div>
+        <div id="panel-mods" class="panel"></div>
+        <div id="panel-modpacks" class="panel"></div>
+        <div id="panel-console" class="panel"></div>
+        <div id="panel-accounts" class="panel"></div>
+        <div id="panel-settings" class="panel"></div>
+      </div>
+    </div>
+
+    <div class="launch-strip">
+      <div class="launch-status" id="launchStatus"></div>
+      <div class="sel-info">
+        <div class="sel-name" id="stripName">No instance selected</div>
+        <div class="sel-det" id="stripDetail">Create or select an instance above</div>
+      </div>
+      <button class="launch-btn" id="launchBtn" onclick="launchGame()">▶ Launch</button>
+    </div>
+  </div>
+
+  <!-- Modals -->
+  <div class="modal-overlay" id="modalOverlay" onclick="closeAllModals()"></div>
+
+  <div class="modal" id="newInstanceModal">
+    <div class="modal-title">New Instance</div>
+    <div class="mf"><div class="ml">Name</div><input class="mi" id="newName" placeholder="e.g. 1.21 Survival"></div>
+    <div class="mf"><div class="ml">Minecraft Version</div><select class="msel" id="newMcVer"></select></div>
+    <div class="mf" id="snapshotRow" style="display:none">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text3);cursor:pointer;">
+        <input type="checkbox" id="showSnapshots" onchange="toggleSnapshots()"> Show snapshots
+      </label>
+    </div>
+    <div class="mf"><div class="ml">Mod Loader</div>
+      <select class="msel" id="newLoader" onchange="onLoaderChange()">
+        <option value="Fabric">Fabric</option>
+        <option value="Forge">Forge</option>
+        <option value="NeoForge">NeoForge</option>
+        <option value="Quilt">Quilt</option>
+        <option value="Vanilla">Vanilla</option>
+      </select>
+    </div>
+    <div class="mf" id="loaderVerField">
+      <div class="ml" id="loaderVerLabel">Fabric Loader Version</div>
+      <select class="msel" id="newLoaderVer"></select>
+    </div>
+    <div class="mact">
+      <button class="btn" onclick="closeAllModals()">Cancel</button>
+      <button class="btn p" onclick="createInstance()">Create</button>
+    </div>
+  </div>
+
+  <div class="modal" id="editInstanceModal">
+    <div class="modal-title">Edit Instance</div>
+    <div class="mf"><div class="ml">Name</div><input class="mi" id="editName"></div>
+    <div class="mf"><div class="ml">Minecraft Version</div><select class="msel" id="editMcVer"></select></div>
+    <div class="mf"><div class="ml">Mod Loader</div>
+      <select class="msel" id="editLoader">
+        <option value="Fabric">Fabric</option><option value="Forge">Forge</option>
+        <option value="NeoForge">NeoForge</option><option value="Quilt">Quilt</option>
+        <option value="Vanilla">Vanilla</option>
+      </select>
+    </div>
+    <div class="mact">
+      <button class="btn" onclick="closeAllModals()">Cancel</button>
+      <button class="btn p" onclick="saveEdit()">Save</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="panels/instances.js"></script>
+  <script src="panels/instance-detail.js"></script>
+  <script src="panels/mods.js"></script>
+  <script src="panels/modpacks.js"></script>
+  <script src="panels/accounts.js"></script>
+  <script src="panels/console.js"></script>
+  <script src="app.js"></script>
+  <script src="panels/settings.js"></script>
+</body>
+</html>
