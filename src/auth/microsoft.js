@@ -11,6 +11,15 @@ const MC_AUTH_URL = 'https://api.minecraftservices.com/authentication/login_with
 const MC_PROFILE_URL = 'https://api.minecraftservices.com/minecraft/profile';
 const MC_ENTITLEMENTS_URL = 'https://api.minecraftservices.com/entitlements/mcstore';
 
+// Mojang profile API returns UUIDs WITHOUT dashes.
+// Minecraft's session server requires them WITH dashes.
+// Missing dashes = "Invalid session" even with a valid token.
+function formatUuid(raw) {
+  if (!raw) return raw;
+  if (raw.includes('-')) return raw; // already formatted
+  return `${raw.slice(0,8)}-${raw.slice(8,12)}-${raw.slice(12,16)}-${raw.slice(16,20)}-${raw.slice(20)}`;
+}
+
 async function authenticateMicrosoft(parentWindow) {
   const msCode = await getMicrosoftCode(parentWindow);
   const msTokens = await getMicrosoftTokens(msCode);
@@ -20,108 +29,64 @@ async function authenticateMicrosoft(parentWindow) {
 function getMicrosoftCode(parentWindow) {
   return new Promise((resolve, reject) => {
     const params = new URLSearchParams({
-      client_id: MS_CLIENT_ID,
-      response_type: 'code',
+      client_id: MS_CLIENT_ID, response_type: 'code',
       redirect_uri: REDIRECT_URI,
       scope: 'service::user.auth.xboxlive.com::MBI_SSL',
-      display: 'touch',
-      locale: 'en'
+      display: 'touch', locale: 'en'
     });
 
-    const authUrl = `${MS_AUTH_URL}?${params}`;
-
     const authWindow = new BrowserWindow({
-      width: 520,
-      height: 680,
-      parent: parentWindow,
-      modal: true,
-      show: false,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        webSecurity: false
-      }
+      width: 520, height: 680, parent: parentWindow, modal: true, show: false,
+      webPreferences: { nodeIntegration: false, contextIsolation: true, webSecurity: false }
     });
 
     let resolved = false;
-
     function tryResolveUrl(url) {
       if (resolved) return;
       try {
-        // The redirect URL contains the auth code
         if (url.startsWith('https://login.live.com/oauth20_desktop.srf') ||
-            url.startsWith('ms-xal-') ||
-            url.includes('oauth20_desktop.srf')) {
+            url.startsWith('ms-xal-') || url.includes('oauth20_desktop.srf')) {
           const urlObj = new URL(url);
           const code = urlObj.searchParams.get('code');
           const error = urlObj.searchParams.get('error');
           if (code || error) {
-            resolved = true;
-            authWindow.destroy();
-            if (error) {
-              reject(new Error(urlObj.searchParams.get('error_description') || error));
-            } else {
-              resolve(code);
-            }
+            resolved = true; authWindow.destroy();
+            if (error) reject(new Error(urlObj.searchParams.get('error_description') || error));
+            else resolve(code);
           }
         }
-      } catch (e) {
-        // URL parse error — ignore
-      }
+      } catch (e) {}
     }
 
-    authWindow.webContents.on('will-redirect', (_e, url) => {
-      tryResolveUrl(url);
-    });
-
-    authWindow.webContents.on('will-navigate', (_e, url) => {
-      tryResolveUrl(url);
-    });
-
-    authWindow.webContents.on('did-navigate', (_e, url) => {
-      tryResolveUrl(url);
-    });
-
-    authWindow.webContents.on('did-navigate-in-page', (_e, url) => {
-      tryResolveUrl(url);
-    });
-
-    // Also watch for the title changing to contain the code (fallback)
+    authWindow.webContents.on('will-redirect',       (_e, url) => tryResolveUrl(url));
+    authWindow.webContents.on('will-navigate',        (_e, url) => tryResolveUrl(url));
+    authWindow.webContents.on('did-navigate',         (_e, url) => tryResolveUrl(url));
+    authWindow.webContents.on('did-navigate-in-page', (_e, url) => tryResolveUrl(url));
     authWindow.webContents.on('page-title-updated', (_e, title) => {
       if (resolved) return;
       if (title && title.startsWith('Success code=')) {
-        const code = title.replace('Success code=', '').trim();
-        resolved = true;
-        authWindow.destroy();
-        resolve(code);
+        resolved = true; authWindow.destroy();
+        resolve(title.replace('Success code=', '').trim());
       }
     });
-
     authWindow.on('closed', () => {
-      if (!resolved) {
-        reject(new Error('Login window was closed before completing sign-in'));
-      }
+      if (!resolved) reject(new Error('Login window was closed before completing sign-in'));
     });
-
-    authWindow.loadURL(authUrl);
+    authWindow.loadURL(`${MS_AUTH_URL}?${params}`);
     authWindow.show();
   });
 }
 
 async function getMicrosoftTokens(code) {
   const params = new URLSearchParams({
-    client_id: MS_CLIENT_ID,
-    code: code,
-    grant_type: 'authorization_code',
-    redirect_uri: REDIRECT_URI
+    client_id: MS_CLIENT_ID, code,
+    grant_type: 'authorization_code', redirect_uri: REDIRECT_URI
   });
-
   const res = await fetch(MS_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString()
   });
-
   const text = await res.text();
   let data;
   try { data = JSON.parse(text); } catch { throw new Error(`Token exchange failed: ${text}`); }
@@ -149,18 +114,13 @@ async function refreshToken(account) {
 }
 
 async function getMinecraftAccount(msTokens, existingAccount = null) {
-  // XBL auth
+  // XBL
   const xblRes = await fetch(XBL_AUTH_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: JSON.stringify({
-      Properties: {
-        AuthMethod: 'RPS',
-        SiteName: 'user.auth.xboxlive.com',
-        RpsTicket: msTokens.access_token
-      },
-      RelyingParty: 'http://auth.xboxlive.com',
-      TokenType: 'JWT'
+      Properties: { AuthMethod: 'RPS', SiteName: 'user.auth.xboxlive.com', RpsTicket: msTokens.access_token },
+      RelyingParty: 'http://auth.xboxlive.com', TokenType: 'JWT'
     })
   });
   if (!xblRes.ok) throw new Error(`Xbox Live auth failed: ${xblRes.status} ${await xblRes.text()}`);
@@ -175,8 +135,7 @@ async function getMinecraftAccount(msTokens, existingAccount = null) {
     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: JSON.stringify({
       Properties: { SandboxId: 'RETAIL', UserTokens: [xblToken] },
-      RelyingParty: 'rp://api.minecraftservices.com/',
-      TokenType: 'JWT'
+      RelyingParty: 'rp://api.minecraftservices.com/', TokenType: 'JWT'
     })
   });
   const xstsData = await xstsRes.json();
@@ -217,7 +176,7 @@ async function getMinecraftAccount(msTokens, existingAccount = null) {
   if (!profileData.id || !profileData.name) throw new Error('Invalid profile response from Mojang');
 
   const account = {
-    uuid: profileData.id,
+    uuid: formatUuid(profileData.id), // Always store with dashes
     username: profileData.name,
     mcToken,
     refreshToken: msTokens.refresh_token || existingAccount?.refreshToken || '',
@@ -239,8 +198,6 @@ async function getMinecraftAccount(msTokens, existingAccount = null) {
   return account;
 }
 
-async function logout(uuid) {
-  return { success: true };
-}
+async function logout(uuid) { return { success: true }; }
 
-module.exports = { authenticateMicrosoft, refreshToken, logout };
+module.exports = { authenticateMicrosoft, refreshToken, logout, formatUuid };

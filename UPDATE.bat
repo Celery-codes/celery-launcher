@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableDelayedExpansion
-title Celery Launcher - Update
+title Celery Launcher — Update
 cd /d "%~dp0"
 
 echo.
@@ -9,34 +9,28 @@ echo  ============================
 
 if "%~1"=="" (
   echo.
-  echo  To use: drag a patch .zip onto this UPDATE.bat file.
+  echo  Drag and drop a patch .zip from Claude onto this file to apply it.
   echo.
   pause
   exit /b 0
 )
 
 set "ZIPFILE=%~1"
+set "TMPDIR=%TEMP%\CeleryUpdate_%RANDOM%"
+
 echo  Applying: %~nx1
 echo.
 
 if not exist "%ZIPFILE%" (
-  echo  ERROR: File not found: %ZIPFILE%
-  pause
-  exit /b 1
+  echo  ERROR: File not found.
+  pause & exit /b 1
 )
 
-set "TMPDIR=%TEMP%\CeleryUpdate_%RANDOM%"
-echo  Extracting to temp folder...
-
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '%ZIPFILE%' -DestinationPath '%TMPDIR%' -Force" 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '%ZIPFILE%' -DestinationPath '%TMPDIR%' -Force"
 if errorlevel 1 (
-  echo  ERROR: Could not extract zip. Make sure PowerShell is available.
-  pause
-  exit /b 1
+  echo  ERROR: Could not extract zip.
+  pause & exit /b 1
 )
-
-echo  Copying files...
-echo.
 
 call :CopyFile "launch.js"           "src\launcher\launch.js"
 call :CopyFile "microsoft.js"        "src\auth\microsoft.js"
@@ -60,27 +54,23 @@ call :CopyFile "accounts.js"         "renderer\panels\accounts.js"
 call :CopyFile "instances.js"        "renderer\panels\instances.js"
 call :CopyFile "instance-detail.js"  "renderer\panels\instance-detail.js"
 call :CopyFile "modpacks.js"         "renderer\panels\modpacks.js"
-call :CopyFile "package.json"        "package.json"
-call :CopyFile "README.md"           "README.md"
 
 rmdir /s /q "%TMPDIR%" 2>nul
 
 echo.
-echo  Update complete! Starting launcher...
+echo  Update applied! Starting launcher...
 echo.
-timeout /t 2 /nobreak >nul
+timeout /t 1 /nobreak >nul
 start "" cmd /c "npm start"
 exit /b 0
 
 :CopyFile
 set "FNAME=%~1"
 set "DEST=%~dp0%~2"
-set "DESTDIR=%DEST%"
-for %%I in ("%DEST%") do set "DESTDIR=%%~dpI"
-if not exist "%DESTDIR%" mkdir "%DESTDIR%"
+for %%D in ("%DEST%") do if not exist "%%~dpD" mkdir "%%~dpD"
 for /r "%TMPDIR%" %%F in ("%FNAME%") do (
   copy /y "%%F" "%DEST%" >nul 2>&1
   echo   [OK] %FNAME%
-  exit /b 0
+  goto :eof
 )
-exit /b 0
+goto :eof

@@ -4,9 +4,6 @@ const path = require('path');
 const { downloadFile } = require('./downloader');
 const { getModrinthVersions } = require('../api/modrinth');
 
-// ── Folder sync ──────────────────────────────────────────────────────────────
-// Keeps mods.json in sync with what's physically in the mods/ folder.
-// Handles mods added manually (drag & drop) and removes entries for deleted files.
 function syncModsWithFolder(instanceId) {
   const { INSTANCES_DIR } = global.paths;
   const modsDir  = path.join(INSTANCES_DIR, instanceId, 'mods');
@@ -25,7 +22,6 @@ function syncModsWithFolder(instanceId) {
   const tracked = new Set(meta.map(m => m.filename));
   let changed = false;
 
-  // Add untracked files
   for (const filename of filesOnDisk) {
     if (!tracked.has(filename)) {
       const title = filename
@@ -36,15 +32,13 @@ function syncModsWithFolder(instanceId) {
       meta.push({
         id: 'manual-' + filename.replace(/[^a-z0-9]/gi, '-'),
         title: title || filename,
-        filename,
-        source: 'manual',
+        filename, source: 'manual',
         installedAt: new Date().toISOString()
       });
       changed = true;
     }
   }
 
-  // Remove entries whose files no longer exist
   const before = meta.length;
   meta = meta.filter(m => filesOnDisk.includes(m.filename));
   if (meta.length !== before) changed = true;
@@ -57,8 +51,6 @@ function syncModsWithFolder(instanceId) {
   return meta;
 }
 
-// ── Modrinth metadata enrichment ─────────────────────────────────────────────
-// For manually added mods, try to look them up on Modrinth by filename stem.
 async function enrichModMetadata(mod) {
   try {
     const stem = mod.filename
@@ -70,8 +62,7 @@ async function enrichModMetadata(mod) {
     if (!stem || stem.length < 3) return mod;
 
     const params = new URLSearchParams({
-      query: stem,
-      limit: '5',
+      query: stem, limit: '5',
       facets: '[["project_type:mod"]]'
     });
     const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, {
@@ -89,22 +80,14 @@ async function enrichModMetadata(mod) {
 
     return {
       ...mod,
-      id:          hit.project_id,
-      title:       hit.title,
-      description: hit.description,
-      iconUrl:     hit.icon_url,
-      downloads:   hit.downloads,
-      follows:     hit.follows,
-      source:      'modrinth',
-      slug:        hit.slug,
-      projectId:   hit.project_id
+      id: hit.project_id, title: hit.title,
+      description: hit.description, iconUrl: hit.icon_url,
+      downloads: hit.downloads, follows: hit.follows,
+      source: 'modrinth', slug: hit.slug, projectId: hit.project_id
     };
-  } catch {
-    return mod;
-  }
+  } catch { return mod; }
 }
 
-// Sync folder then enrich any unrecognised manual mods via Modrinth
 async function syncAndEnrichMods(instanceId) {
   const { INSTANCES_DIR } = global.paths;
   const metaDir  = path.join(INSTANCES_DIR, instanceId, '.celery');
@@ -130,7 +113,6 @@ async function syncAndEnrichMods(instanceId) {
   return meta;
 }
 
-// ── Public API ───────────────────────────────────────────────────────────────
 async function getInstalledMods(instanceId) {
   return syncAndEnrichMods(instanceId);
 }
@@ -156,9 +138,12 @@ async function installMod(instanceId, mod, source, onProgress) {
   let downloadUrl, filename;
 
   if (source === 'modrinth') {
+    // Only use release versions — filter out alpha/beta
     const versions = await getModrinthVersions(mod.id, instance.mcVersion, instance.loader);
-    if (!versions.length) throw new Error(`No compatible version of "${mod.title}" for ${instance.mcVersion} ${instance.loader}`);
-    const latest = versions[0];
+    const releaseVersions = versions.filter(v => v.version_type === 'release');
+    const candidates = releaseVersions.length ? releaseVersions : versions;
+    if (!candidates.length) throw new Error(`No compatible version of "${mod.title}" for ${instance.mcVersion} ${instance.loader}`);
+    const latest = candidates[0];
     const primaryFile = latest.files.find(f => f.primary) || latest.files[0];
     if (!primaryFile) throw new Error('No downloadable file found');
     downloadUrl = primaryFile.url;
@@ -174,7 +159,6 @@ async function installMod(instanceId, mod, source, onProgress) {
     onProgress({ status: 'downloading', message: `Downloading ${mod.title}...`, percent: Math.floor(p * 100) });
   });
 
-  // Sync then stamp the new file with full metadata
   const meta    = syncModsWithFolder(instanceId);
   const idx     = meta.findIndex(m => m.filename === filename);
   const metaDir = path.join(INSTANCES_DIR, instanceId, '.celery');
@@ -224,10 +208,21 @@ async function updateAllMods(instanceId, onProgress) {
     try {
       if (mod.source === 'modrinth') {
         const versions = await getModrinthVersions(mod.id, instance.mcVersion, instance.loader);
-        if (!versions.length) { results.push({ mod: mod.title, status: 'no_update' }); continue; }
-        const latest = versions[0];
+
+        // Only update to official releases — skip alpha and beta
+        const releaseVersions = versions.filter(v => v.version_type === 'release');
+        const candidates = releaseVersions.length ? releaseVersions : [];
+
+        if (!candidates.length) {
+          results.push({ mod: mod.title, status: 'no_release' }); continue;
+        }
+
+        const latest = candidates[0];
         const pf = latest.files.find(f => f.primary) || latest.files[0];
-        if (!pf || pf.filename === mod.filename) { results.push({ mod: mod.title, status: 'up_to_date' }); continue; }
+        if (!pf || pf.filename === mod.filename) {
+          results.push({ mod: mod.title, status: 'up_to_date' }); continue;
+        }
+
         const modsDir = path.join(INSTANCES_DIR, instanceId, 'mods');
         const oldFile = path.join(modsDir, mod.filename);
         if (fs.existsSync(oldFile)) fs.unlinkSync(oldFile);
@@ -241,6 +236,11 @@ async function updateAllMods(instanceId, onProgress) {
       results.push({ mod: mod.title, status: 'error', error: e.message });
     }
   }
+
+  const metaDir  = path.join(INSTANCES_DIR, instanceId, '.celery');
+  const metaFile = path.join(metaDir, 'mods.json');
+  if (!fs.existsSync(metaDir)) fs.mkdirSync(metaDir, { recursive: true });
+  fs.writeFileSync(metaFile, JSON.stringify(meta, null, 2));
 
   const final = syncModsWithFolder(instanceId);
   updateInstanceModCount(instanceId, final.length);
