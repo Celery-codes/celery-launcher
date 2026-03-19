@@ -10,18 +10,19 @@ const { downloadVersion } = require('./launcher/downloader');
 const { fetchMcVersions, fetchFabricVersions, fetchForgeVersions } = require('./api/versions');
 const { searchModrinth } = require('./api/modrinth');
 const { searchCurseForge } = require('./api/curseforge');
-const { installMod, removeMod, getInstalledMods, updateAllMods } = require('./launcher/mods');
+const { installMod, removeMod, getInstalledMods, updateAllMods,
+        toggleMod, toggleMods, checkMissingDependencies } = require('./launcher/mods');
 
 let mainWindow;
 const isDev = process.argv.includes('--dev');
 
-const DATA_DIR     = path.join(app.getPath('appData'), 'CeleryLauncher');
-const INSTANCES_DIR= path.join(DATA_DIR, 'instances');
-const VERSIONS_DIR = path.join(DATA_DIR, 'versions');
-const ASSETS_DIR   = path.join(DATA_DIR, 'assets');
-const LIBRARIES_DIR= path.join(DATA_DIR, 'libraries');
-const JAVA_DIR     = path.join(DATA_DIR, 'java');
-const LOGS_DIR     = path.join(DATA_DIR, 'logs');
+const DATA_DIR      = path.join(app.getPath('appData'), 'CeleryLauncher');
+const INSTANCES_DIR = path.join(DATA_DIR, 'instances');
+const VERSIONS_DIR  = path.join(DATA_DIR, 'versions');
+const ASSETS_DIR    = path.join(DATA_DIR, 'assets');
+const LIBRARIES_DIR = path.join(DATA_DIR, 'libraries');
+const JAVA_DIR      = path.join(DATA_DIR, 'java');
+const LOGS_DIR      = path.join(DATA_DIR, 'logs');
 
 [DATA_DIR, INSTANCES_DIR, VERSIONS_DIR, ASSETS_DIR, LIBRARIES_DIR, LOGS_DIR].forEach(d => {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
@@ -29,13 +30,13 @@ const LOGS_DIR     = path.join(DATA_DIR, 'logs');
 
 global.paths = { DATA_DIR, INSTANCES_DIR, VERSIONS_DIR, ASSETS_DIR, LIBRARIES_DIR, JAVA_DIR };
 
-// ── Persistent log file per session ─────────────────────────────────────────
+// ── Persistent log session ────────────────────────────────────────────────────
 let currentLogStream = null;
 
 function openLogSession(instanceName) {
   if (currentLogStream) { try { currentLogStream.end(); } catch {} currentLogStream = null; }
   const safe = (instanceName || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
-  const date = new Date().toISOString().replace(/[:.]/g, '-').replace('T','_').slice(0,19);
+  const date = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
   const logPath = path.join(LOGS_DIR, `${safe}_${date}.log`);
   currentLogStream = fs.createWriteStream(logPath, { flags: 'a' });
   currentLogStream.write(`=== ${instanceName} — ${new Date().toLocaleString()} ===\n`);
@@ -53,13 +54,6 @@ function closeLogSession() {
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-// Make a safe folder name from instance name, e.g. "My SMP World" → "My_SMP_World"
-function instanceFolderName(instance) {
-  const safe = inst.name.replace(/[^a-zA-Z0-9 ._-]/g, '').replace(/\s+/g, '_').slice(0, 50);
-  return safe || instance.id;
-}
-
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1100, height: 700, minWidth: 900, minHeight: 600,
@@ -72,13 +66,16 @@ function createWindow() {
   });
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   if (isDev) mainWindow.webContents.openDevTools();
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url); return { action: 'deny' };
+  });
 }
 
 app.whenReady().then(() => {
   const { session } = require('electron');
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': ["default-src 'self' 'unsafe-inline' https: data: blob:"] } });
+    callback({ responseHeaders: { ...details.responseHeaders,
+      'Content-Security-Policy': ["default-src 'self' 'unsafe-inline' https: data: blob:"] } });
   });
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
@@ -114,15 +111,12 @@ ipcMain.handle('auth-refresh', async (_, uuid) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
-// Instances
+// Instances — always use instanceId as folder name, no renaming
 ipcMain.handle('instances-get', () => store.get('instances', []));
 ipcMain.handle('instances-save', (_, instances) => { store.set('instances', instances); return { success: true }; });
 
 ipcMain.handle('instance-open-folder', (_, instanceId) => {
-  const instances = store.get('instances', []);
-  const inst = instances.find(i => i.id === instanceId);
-  const folderName = inst ? instanceFolderName(inst) : instanceId;
-  const dir = path.join(INSTANCES_DIR, folderName);
+  const dir = path.join(INSTANCES_DIR, instanceId);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   shell.openPath(dir);
   return { success: true };
@@ -130,8 +124,8 @@ ipcMain.handle('instance-open-folder', (_, instanceId) => {
 
 // Versions
 ipcMain.handle('versions-minecraft', async () => { try { return await fetchMcVersions(); } catch (e) { return { error: e.message }; } });
-ipcMain.handle('versions-fabric', async (_, mcVersion) => { try { return await fetchFabricVersions(mcVersion); } catch (e) { return { error: e.message }; } });
-ipcMain.handle('versions-forge', async (_, mcVersion) => { try { return await fetchForgeVersions(mcVersion); } catch (e) { return { error: e.message }; } });
+ipcMain.handle('versions-fabric',    async (_, v) => { try { return await fetchFabricVersions(v); } catch (e) { return { error: e.message }; } });
+ipcMain.handle('versions-forge',     async (_, v) => { try { return await fetchForgeVersions(v); } catch (e) { return { error: e.message }; } });
 
 // Launch
 ipcMain.handle('launch-game', async (_, { instanceId, accountUuid }) => {
@@ -147,49 +141,42 @@ ipcMain.handle('launch-game', async (_, { instanceId, accountUuid }) => {
     const settings = store.get('settings', {});
 
     mainWindow.webContents.send('launch-status', { status: 'preparing', message: 'Preparing launch...' });
+    await downloadVersion(instance, settings, p => mainWindow.webContents.send('launch-status', { status: 'downloading', ...p }));
 
-    await downloadVersion(instance, settings, (progress) => {
-      mainWindow.webContents.send('launch-status', { status: 'downloading', ...progress });
-    });
-
-    // Refresh token before launch
+    // Refresh token
     let freshAccount = account;
     try {
       freshAccount = await refreshToken(account);
-      const allAccounts = store.get('accounts', []);
-      const ai = allAccounts.findIndex(a => a.uuid === freshAccount.uuid);
-      if (ai >= 0) allAccounts[ai] = freshAccount;
-      store.set('accounts', allAccounts);
+      const all = store.get('accounts', []);
+      const ai = all.findIndex(a => a.uuid === freshAccount.uuid);
+      if (ai >= 0) all[ai] = freshAccount;
+      store.set('accounts', all);
     } catch (e) {
       mainWindow.webContents.send('game-log', '[Celery] Token refresh failed: ' + e.message + '\n');
     }
 
     mainWindow.webContents.send('launch-status', { status: 'launching', message: 'Starting Minecraft...' });
 
-    // Open log session named after the instance
     const logPath = openLogSession(instance.name);
     mainWindow.webContents.send('log-file-path', logPath);
 
-    // Playtime starts when the process actually spawns (tracked in launch.js via onSpawn callback)
     let launchStartTime = null;
 
     await launchMinecraft(instance, freshAccount, settings,
       (data) => {
-        // Start timer on first real game output — not during token refresh/download
         if (!launchStartTime) launchStartTime = Date.now();
         mainWindow.webContents.send('game-log', data);
         writeLog(data);
       },
       () => {
-        // Accurate playtime — only count time game was actually running
         if (launchStartTime) {
           const sessionSeconds = Math.floor((Date.now() - launchStartTime) / 1000);
-          const allInstances = store.get('instances', []);
-          const idx = allInstances.findIndex(i => i.id === instanceId);
+          const all = store.get('instances', []);
+          const idx = all.findIndex(i => i.id === instanceId);
           if (idx >= 0) {
-            allInstances[idx].playtimeSeconds = (allInstances[idx].playtimeSeconds || 0) + sessionSeconds;
-            allInstances[idx].lastPlayed = new Date().toISOString();
-            store.set('instances', allInstances);
+            all[idx].playtimeSeconds = (all[idx].playtimeSeconds || 0) + sessionSeconds;
+            all[idx].lastPlayed = new Date().toISOString();
+            store.set('instances', all);
           }
           mainWindow.webContents.send('playtime-update', { instanceId, sessionSeconds });
         }
@@ -215,8 +202,10 @@ ipcMain.handle('mods-search-curseforge', async (_, opts) => {
   catch (e) { return { error: e.message }; }
 });
 ipcMain.handle('mods-install', async (_, { instanceId, mod, source }) => {
-  try { await installMod(instanceId, mod, source, p => mainWindow.webContents.send('mod-install-progress', { modId: mod.id, ...p })); return { success: true }; }
-  catch (e) { return { success: false, error: e.message }; }
+  try {
+    const result = await installMod(instanceId, mod, source, p => mainWindow.webContents.send('mod-install-progress', { modId: mod.id, ...p }));
+    return { success: true, deps: result?.deps };
+  } catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('mods-remove', async (_, { instanceId, modId }) => {
   try { await removeMod(instanceId, modId); return { success: true }; }
@@ -227,33 +216,21 @@ ipcMain.handle('mods-update-all', async (_, instanceId) => {
   try { const results = await updateAllMods(instanceId, p => mainWindow.webContents.send('mod-update-progress', p)); return { success: true, results }; }
   catch (e) { return { success: false, error: e.message }; }
 });
-
 ipcMain.handle('mods-toggle', async (_, { instanceId, modId, enable }) => {
-  try {
-    const { toggleMod } = require('./launcher/mods');
-    return toggleMod(instanceId, modId, enable);
-  } catch (e) { return { success: false, error: e.message }; }
+  try { return toggleMod(instanceId, modId, enable); } catch (e) { return { success: false, error: e.message }; }
 });
-
 ipcMain.handle('mods-toggle-bulk', async (_, { instanceId, modIds, enable }) => {
-  try {
-    const { toggleMods } = require('./launcher/mods');
-    return toggleMods(instanceId, modIds, enable);
-  } catch (e) { return { success: false, error: e.message }; }
+  try { return toggleMods(instanceId, modIds, enable); } catch (e) { return { success: false, error: e.message }; }
 });
-
 ipcMain.handle('mods-check-deps', async (_, instanceId) => {
-  try {
-    const { checkMissingDependencies } = require('./launcher/mods');
-    return await checkMissingDependencies(instanceId);
-  } catch (e) { return []; }
+  try { return await checkMissingDependencies(instanceId); } catch { return []; }
 });
 
 // Settings
 ipcMain.handle('settings-get', () => store.get('settings', { ram: 4, javaPath: '', customJvmArgs: '', closeOnLaunch: false, pvpFlags: true, autoUpdateMods: false, curseforgeKey: '' }));
 ipcMain.handle('settings-save', (_, s) => { store.set('settings', s); return { success: true }; });
 
-// Modpack import
+// Modpack
 ipcMain.handle('modpack-import', async () => {
   const { filePaths } = await dialog.showOpenDialog(mainWindow, { title: 'Import Modpack', filters: [{ name: 'Modpack', extensions: ['mrpack', 'zip'] }], properties: ['openFile'] });
   if (!filePaths.length) return { cancelled: true };
@@ -283,7 +260,7 @@ ipcMain.handle('loader-api-install', async (_, { instanceId }) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
-// Log file management
+// Log management
 ipcMain.handle('open-log-folder', () => { shell.openPath(LOGS_DIR); return { success: true }; });
 ipcMain.handle('clear-log-folder', () => {
   try {
@@ -305,7 +282,7 @@ ipcMain.handle('save-log-file', async (_, text) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
-// Desktop shortcut
+// Shortcut
 ipcMain.handle('create-shortcut', async () => {
   try {
     const shortcutPath = path.join(require('os').homedir(), 'Desktop', 'Celery Launcher.lnk');
@@ -314,15 +291,12 @@ ipcMain.handle('create-shortcut', async () => {
       description: 'Celery Launcher', icon: path.join(app.getAppPath(), 'assets', 'icon.ico'), iconIndex: 0
     });
     if (created) return { success: true };
-    const batPath = path.join(require('os').homedir(), 'Desktop', 'Celery Launcher.bat');
-    fs.writeFileSync(batPath, `@echo off\ncd /d "${app.getAppPath()}"\nnpm start\n`);
+    const bat = path.join(require('os').homedir(), 'Desktop', 'Celery Launcher.bat');
+    fs.writeFileSync(bat, `@echo off\ncd /d "${app.getAppPath()}"\nnpm start\n`);
     return { success: true };
   } catch (e) {
-    try {
-      const batPath = path.join(require('os').homedir(), 'Desktop', 'Celery Launcher.bat');
-      fs.writeFileSync(batPath, `@echo off\ncd /d "${app.getAppPath()}"\nnpm start\n`);
-      return { success: true };
-    } catch (e2) { return { success: false, error: e2.message }; }
+    try { const bat = path.join(require('os').homedir(), 'Desktop', 'Celery Launcher.bat'); fs.writeFileSync(bat, `@echo off\ncd /d "${app.getAppPath()}"\nnpm start\n`); return { success: true }; }
+    catch (e2) { return { success: false, error: e2.message }; }
   }
 });
 
@@ -332,8 +306,7 @@ ipcMain.handle('skin-get-head', async (_, { uuid, username }) => {
   try {
     const filePath = await fetchSkinHead(uuid, username);
     if (!filePath) return { success: false };
-    const b64 = 'data:image/png;base64,' + fs.readFileSync(filePath).toString('base64');
-    return { success: true, dataUrl: b64, filePath };
+    return { success: true, dataUrl: 'data:image/png;base64,' + fs.readFileSync(filePath).toString('base64'), filePath };
   } catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('skin-set-window-icon', async (_, { uuid, username }) => {
@@ -351,12 +324,9 @@ ipcMain.handle('skin-set-window-icon', async (_, { uuid, username }) => {
 ipcMain.handle('show-input-dialog', async (_, { title, label, placeholder }) => {
   const { BrowserWindow: BW } = require('electron');
   return new Promise((resolve) => {
-    const win = new BW({
-      width: 380, height: 180, parent: mainWindow, modal: true,
+    const win = new BW({ width: 380, height: 180, parent: mainWindow, modal: true,
       resizable: false, minimizable: false, maximizable: false, frame: false,
-      backgroundColor: '#131614',
-      webPreferences: { nodeIntegration: true, contextIsolation: false }
-    });
+      backgroundColor: '#131614', webPreferences: { nodeIntegration: true, contextIsolation: false } });
     const html = `<!DOCTYPE html><html><head><style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:'Outfit',sans-serif;background:#131614;color:#e8ede9;padding:20px;user-select:none;}
@@ -379,23 +349,10 @@ function ok(){ipcRenderer.send('input-dialog-result',document.getElementById('in
 function cancel(){ipcRenderer.send('input-dialog-result',null);}
 </script></body></html>`;
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
-    const channelId = 'input-dialog-result-' + Date.now() + '-' + Math.random();
     const { ipcMain: ipc2 } = require('electron');
-    // Use unique channel to prevent cross-talk
-    win.webContents.executeJavaScript(`
-      const {ipcRenderer} = require('electron');
-      document.querySelector('button.ok').onclick = () => ipcRenderer.send('${channelId}', document.getElementById('inp').value.trim());
-      document.querySelector('button:not(.ok)').onclick = () => ipcRenderer.send('${channelId}', null);
-      document.getElementById('inp').addEventListener('keydown', e => {
-        if (e.key === 'Enter') ipcRenderer.send('${channelId}', document.getElementById('inp').value.trim());
-        if (e.key === 'Escape') ipcRenderer.send('${channelId}', null);
-      });
-    `).catch(() => {});
-    const handler = (_, val) => { ipc2.removeListener(channelId, handler); win.destroy(); resolve(val); };
-    ipc2.once(channelId, handler);
-    // Fallback for original channel
-    ipc2.once('input-dialog-result', (_, val) => { ipc2.removeListener(channelId, handler); win.destroy(); resolve(val); });
-    win.on('closed', () => { ipc2.removeListener(channelId, handler); resolve(null); });
+    const handler = (_, val) => { ipc2.removeListener('input-dialog-result', handler); win.destroy(); resolve(val); };
+    ipc2.once('input-dialog-result', handler);
+    win.on('closed', () => { ipc2.removeListener('input-dialog-result', handler); resolve(null); });
   });
 });
 
@@ -415,13 +372,10 @@ ipcMain.handle('options-apply', (_, { instanceId, profileId }) => {
 });
 ipcMain.handle('options-delete', (_, profileId) => optionsModule.deleteProfile(profileId));
 
-// Instance folder listing
+// Instance folder listing — always uses instanceId
 ipcMain.handle('instance-list-folder', (_, { instanceId, folder }) => {
   try {
-    const instances = store.get('instances', []);
-    const inst = instances.find(i => i.id === instanceId);
-    const folderName = inst ? instanceFolderName(inst) : instanceId;
-    const dir = path.join(INSTANCES_DIR, folderName, folder);
+    const dir = path.join(INSTANCES_DIR, instanceId, folder);
     if (!fs.existsSync(dir)) return { files: [] };
     return { files: fs.readdirSync(dir, { withFileTypes: true }).map(e => {
       const full = path.join(dir, e.name);
@@ -433,10 +387,7 @@ ipcMain.handle('instance-list-folder', (_, { instanceId, folder }) => {
 });
 
 ipcMain.handle('instance-open-subfolder', (_, { instanceId, folder }) => {
-  const instances = store.get('instances', []);
-  const inst = instances.find(i => i.id === instanceId);
-  const folderName = inst ? instanceFolderName(inst) : instanceId;
-  const dir = path.join(INSTANCES_DIR, folderName, folder);
+  const dir = path.join(INSTANCES_DIR, instanceId, folder);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   shell.openPath(dir);
   return { success: true };
@@ -444,26 +395,20 @@ ipcMain.handle('instance-open-subfolder', (_, { instanceId, folder }) => {
 
 ipcMain.handle('instance-delete-file', (_, { instanceId, folder, filename }) => {
   try {
-    const instances = store.get('instances', []);
-    const inst = instances.find(i => i.id === instanceId);
-    const folderName = inst ? instanceFolderName(inst) : instanceId;
-    const filePath = path.join(INSTANCES_DIR, folderName, folder, filename);
+    const filePath = path.join(INSTANCES_DIR, instanceId, folder, filename);
     if (fs.existsSync(filePath)) {
-      const stat = fs.statSync(filePath);
-      if (stat.isDirectory()) fs.rmSync(filePath, { recursive: true });
+      const st = fs.statSync(filePath);
+      if (st.isDirectory()) fs.rmSync(filePath, { recursive: true });
       else fs.unlinkSync(filePath);
     }
     return { success: true };
   } catch (e) { return { success: false, error: e.message }; }
 });
 
-// servers.dat reader
+// servers.dat
 ipcMain.handle('instance-read-servers', (_, instanceId) => {
   try {
-    const instances = store.get('instances', []);
-    const inst = instances.find(i => i.id === instanceId);
-    const folderName = inst ? instanceFolderName(inst) : instanceId;
-    const serversFile = path.join(INSTANCES_DIR, folderName, 'servers.dat');
+    const serversFile = path.join(INSTANCES_DIR, instanceId, 'servers.dat');
     if (!fs.existsSync(serversFile)) return { servers: [] };
     const text = fs.readFileSync(serversFile).toString('latin1');
     const readable = [];

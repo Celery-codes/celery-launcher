@@ -2,39 +2,24 @@ const fetch = require('node-fetch');
 const fs = require('fs');
 const path = require('path');
 const { downloadFile } = require('./downloader');
-const { getModrinthVersions, getModrinthProject } = require('../api/modrinth');
+const { getModrinthVersions } = require('../api/modrinth');
 
-// ── Instance folder resolution ────────────────────────────────────────────────
 function getInstanceDir(instanceId) {
-  const { INSTANCES_DIR } = global.paths;
-  const Store = require('electron-store');
-  const store = new Store();
-  const inst = store.get('instances', []).find(i => i.id === instanceId);
-  if (inst) {
-    const safe = inst.name.replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, '_').slice(0, 50);
-    const nameDir = path.join(INSTANCES_DIR, safe || inst.id);
-    if (fs.existsSync(nameDir)) return nameDir;
-  }
-  return path.join(INSTANCES_DIR, instanceId);
+  // Always instanceId — simple, no renaming
+  return path.join(global.paths.INSTANCES_DIR, instanceId);
 }
 
-// ── Folder sync ───────────────────────────────────────────────────────────────
-// Tracks both .jar (enabled) and .jar.disabled files
 function syncModsWithFolder(instanceId) {
   const instanceDir = getInstanceDir(instanceId);
   const modsDir  = path.join(instanceDir, 'mods');
   const metaDir  = path.join(instanceDir, '.celery');
   const metaFile = path.join(metaDir, 'mods.json');
 
-  // Collect both enabled and disabled files
   const allFiles = fs.existsSync(modsDir) ? fs.readdirSync(modsDir) : [];
-  const enabledFiles  = allFiles.filter(f => f.endsWith('.jar') || f.endsWith('.zip'));
-  const disabledFiles = allFiles.filter(f => f.endsWith('.jar.disabled') || f.endsWith('.zip.disabled'));
-
-  // Canonical filename = the .jar name (without .disabled suffix)
-  const filesOnDisk = new Map(); // canonical → { actual, enabled }
-  for (const f of enabledFiles)  filesOnDisk.set(f, { actual: f, enabled: true });
-  for (const f of disabledFiles) {
+  const filesOnDisk = new Map();
+  for (const f of allFiles.filter(f => f.endsWith('.jar') || f.endsWith('.zip')))
+    filesOnDisk.set(f, { actual: f, enabled: true });
+  for (const f of allFiles.filter(f => f.endsWith('.jar.disabled') || f.endsWith('.zip.disabled'))) {
     const canonical = f.replace(/\.disabled$/, '');
     if (!filesOnDisk.has(canonical)) filesOnDisk.set(canonical, { actual: f, enabled: false });
   }
@@ -49,36 +34,23 @@ function syncModsWithFolder(instanceId) {
 
   for (const [canonical, info] of filesOnDisk) {
     if (!tracked.has(canonical)) {
-      const title = canonical
-        .replace(/\.jar$/i, '').replace(/\.zip$/i, '')
-        .replace(/[-_](?:mc)?1\.\d+[\d.]*[-+].*/i, '')
-        .replace(/[-_]\d[\d.]*.*/,  '')
-        .replace(/[-_]/g, ' ').trim();
-      meta.push({
-        id: 'manual-' + canonical.replace(/[^a-z0-9]/gi, '-'),
-        title: title || canonical,
-        filename: canonical,
-        source: 'manual',
-        enabled: info.enabled,
-        installedAt: new Date().toISOString()
-      });
+      const title = canonical.replace(/\.jar$/i,'').replace(/\.zip$/i,'')
+        .replace(/[-_](?:mc)?1\.\d+[\d.]*[-+].*/i,'').replace(/[-_]\d[\d.]*.*/,'')
+        .replace(/[-_]/g,' ').trim();
+      meta.push({ id:'manual-'+canonical.replace(/[^a-z0-9]/gi,'-'), title:title||canonical,
+        filename:canonical, source:'manual', enabled:info.enabled, installedAt:new Date().toISOString() });
       changed = true;
     } else {
-      // Sync enabled state from disk
       const m = meta.find(m => m.filename === canonical);
       if (m && m.enabled !== info.enabled) { m.enabled = info.enabled; changed = true; }
     }
   }
 
-  // Remove entries whose files are gone entirely
   const before = meta.length;
   meta = meta.filter(m => filesOnDisk.has(m.filename));
   if (meta.length !== before) changed = true;
 
-  // Ensure all entries have enabled field
-  for (const m of meta) {
-    if (m.enabled === undefined) { m.enabled = true; changed = true; }
-  }
+  for (const m of meta) { if (m.enabled === undefined) { m.enabled = true; changed = true; } }
 
   if (changed) {
     if (!fs.existsSync(metaDir)) fs.mkdirSync(metaDir, { recursive: true });
@@ -88,7 +60,6 @@ function syncModsWithFolder(instanceId) {
   return meta;
 }
 
-// ── Toggle mod enabled/disabled ───────────────────────────────────────────────
 function toggleMod(instanceId, modId, enable) {
   const instanceDir = getInstanceDir(instanceId);
   const modsDir = path.join(instanceDir, 'mods');
@@ -99,77 +70,54 @@ function toggleMod(instanceId, modId, enable) {
   const mod = meta.find(m => m.id === modId);
   if (!mod) throw new Error('Mod not found: ' + modId);
 
-  const enabledPath  = path.join(modsDir, mod.filename);
-  const disabledPath = path.join(modsDir, mod.filename + '.disabled');
+  const ep = path.join(modsDir, mod.filename);
+  const dp = path.join(modsDir, mod.filename + '.disabled');
 
-  if (enable) {
-    if (fs.existsSync(disabledPath)) fs.renameSync(disabledPath, enabledPath);
-    mod.enabled = true;
-  } else {
-    if (fs.existsSync(enabledPath)) fs.renameSync(enabledPath, disabledPath);
-    mod.enabled = false;
-  }
+  if (enable) { if (fs.existsSync(dp)) fs.renameSync(dp, ep); mod.enabled = true; }
+  else        { if (fs.existsSync(ep)) fs.renameSync(ep, dp); mod.enabled = false; }
 
   fs.writeFileSync(metaFile, JSON.stringify(meta, null, 2));
   return { success: true };
 }
 
-// ── Bulk toggle ───────────────────────────────────────────────────────────────
 function toggleMods(instanceId, modIds, enable) {
-  for (const id of modIds) {
-    try { toggleMod(instanceId, id, enable); } catch {}
-  }
+  for (const id of modIds) { try { toggleMod(instanceId, id, enable); } catch {} }
   return { success: true };
 }
 
-// ── Dependency check ──────────────────────────────────────────────────────────
-async function checkDependencies(projectId, mcVersion, loader) {
+async function checkDependencies(projectId) {
   try {
-    const res = await fetch(
-      `https://api.modrinth.com/v2/project/${projectId}/dependencies`,
-      { headers: { 'User-Agent': 'CeleryLauncher/2.0.0' } }
-    );
+    const res = await fetch(`https://api.modrinth.com/v2/project/${projectId}/dependencies`,
+      { headers: { 'User-Agent': 'CeleryLauncher/2.0.0' } });
     if (!res.ok) return { required: [], optional: [] };
     const data = await res.json();
     const required = [], optional = [];
-
     for (const dep of (data.projects || [])) {
-      // Find which version entry references this dependency
       const depEntry = (data.versions || []).find(v => v.project_id === dep.id);
       const depType = depEntry?.dependency_type || 'required';
       const info = { id: dep.id, title: dep.title, slug: dep.slug, iconUrl: dep.icon_url };
       if (depType === 'required') required.push(info);
       else if (depType === 'optional') optional.push(info);
     }
-
     return { required, optional };
-  } catch {
-    return { required: [], optional: [] };
-  }
+  } catch { return { required: [], optional: [] }; }
 }
 
-// ── Metadata enrichment ───────────────────────────────────────────────────────
 async function enrichModMetadata(mod) {
   try {
-    const stem = mod.filename
-      .replace(/\.jar$/i, '').replace(/\.zip$/i, '')
-      .replace(/[-_](?:mc)?1\.\d[\d.]*[-+].*/i, '')
-      .replace(/[-_]\d[\d.].*/,  '')
-      .replace(/[-_]/g, ' ').trim();
+    const stem = mod.filename.replace(/\.jar$/i,'').replace(/\.zip$/i,'')
+      .replace(/[-_](?:mc)?1\.\d[\d.]*[-+].*/i,'').replace(/[-_]\d[\d.].*/,'')
+      .replace(/[-_]/g,' ').trim();
     if (!stem || stem.length < 3) return mod;
-
     const params = new URLSearchParams({ query: stem, limit: '5', facets: '[["project_type:mod"]]' });
     const res = await fetch(`https://api.modrinth.com/v2/search?${params}`, { headers: { 'User-Agent': 'CeleryLauncher/2.0.0' } });
     if (!res.ok) return mod;
     const data = await res.json();
-    const stemNorm = stem.toLowerCase().replace(/\s/g, '');
-    const hit = (data.hits || []).find(h =>
-      h.title.toLowerCase().replace(/\s/g, '') === stemNorm ||
-      mod.filename.toLowerCase().includes(h.slug.toLowerCase())
-    );
+    const stemNorm = stem.toLowerCase().replace(/\s/g,'');
+    const hit = (data.hits||[]).find(h => h.title.toLowerCase().replace(/\s/g,'')===stemNorm || mod.filename.toLowerCase().includes(h.slug.toLowerCase()));
     if (!hit) return mod;
-    return { ...mod, id: hit.project_id, title: hit.title, description: hit.description,
-      iconUrl: hit.icon_url, downloads: hit.downloads, source: 'modrinth', slug: hit.slug, projectId: hit.project_id };
+    return { ...mod, id:hit.project_id, title:hit.title, description:hit.description, iconUrl:hit.icon_url,
+      downloads:hit.downloads, source:'modrinth', slug:hit.slug, projectId:hit.project_id };
   } catch { return mod; }
 }
 
@@ -194,7 +142,6 @@ async function syncAndEnrichMods(instanceId) {
     if (!fs.existsSync(metaDir)) fs.mkdirSync(metaDir, { recursive: true });
     fs.writeFileSync(metaFile, JSON.stringify(meta, null, 2));
   }
-
   return meta;
 }
 
@@ -211,8 +158,7 @@ function updateInstanceModCount(instanceId, count) {
 async function installMod(instanceId, mod, source, onProgress) {
   const instanceDir = getInstanceDir(instanceId);
   const Store = require('electron-store');
-  const store = new Store();
-  const instance = store.get('instances', []).find(i => i.id === instanceId);
+  const instance = new Store().get('instances', []).find(i => i.id === instanceId);
   if (!instance) throw new Error('Instance not found');
 
   const modsDir = path.join(instanceDir, 'mods');
@@ -221,70 +167,55 @@ async function installMod(instanceId, mod, source, onProgress) {
   let downloadUrl, filename, deps = { required: [], optional: [] };
 
   if (source === 'modrinth') {
-    // Check dependencies first
-    deps = await checkDependencies(mod.id, instance.mcVersion, instance.loader);
-
+    deps = await checkDependencies(mod.id);
     const versions = await getModrinthVersions(mod.id, instance.mcVersion, instance.loader);
-    const releaseVersions = versions.filter(v => v.version_type === 'release');
-    const candidates = releaseVersions.length ? releaseVersions : versions;
+    const releases = versions.filter(v => v.version_type === 'release');
+    const candidates = releases.length ? releases : versions;
     if (!candidates.length) throw new Error(`No compatible version of "${mod.title}" for ${instance.mcVersion} ${instance.loader}`);
-    const latest = candidates[0];
-    const primaryFile = latest.files.find(f => f.primary) || latest.files[0];
-    if (!primaryFile) throw new Error('No downloadable file found');
-    downloadUrl = primaryFile.url;
-    filename    = primaryFile.filename;
+    const pf = candidates[0].files.find(f => f.primary) || candidates[0].files[0];
+    if (!pf) throw new Error('No downloadable file found');
+    downloadUrl = pf.url; filename = pf.filename;
   } else if (source === 'curseforge') {
     if (!mod.downloadUrl) throw new Error('No download URL for this CurseForge mod');
-    downloadUrl = mod.downloadUrl;
-    filename    = mod.filename || `${mod.id}.jar`;
+    downloadUrl = mod.downloadUrl; filename = mod.filename || `${mod.id}.jar`;
   }
 
   onProgress({ status: 'downloading', message: `Downloading ${mod.title}...`, percent: 0 });
-  await downloadFile(downloadUrl, path.join(modsDir, filename), null, p => {
-    onProgress({ status: 'downloading', message: `Downloading ${mod.title}...`, percent: Math.floor(p * 100) });
-  });
+  await downloadFile(downloadUrl, path.join(modsDir, filename), null, p =>
+    onProgress({ status: 'downloading', message: `Downloading ${mod.title}...`, percent: Math.floor(p*100) }));
 
-  const meta     = syncModsWithFolder(instanceId);
-  const idx      = meta.findIndex(m => m.filename === filename);
-  const metaDir  = path.join(instanceDir, '.celery');
-  const metaFile = path.join(metaDir, 'mods.json');
+  const meta    = syncModsWithFolder(instanceId);
+  const idx     = meta.findIndex(m => m.filename === filename);
+  const metaDir = path.join(instanceDir, '.celery');
+  const metaFile= path.join(metaDir, 'mods.json');
   if (idx >= 0) {
-    meta[idx] = {
-      id: mod.id, slug: mod.slug, title: mod.title, filename,
-      source, enabled: true, installedAt: new Date().toISOString(),
-      iconUrl: mod.iconUrl, projectId: mod.id,
-      dependencies: deps.required.map(d => d.id)
-    };
+    meta[idx] = { id:mod.id, slug:mod.slug, title:mod.title, filename, source, enabled:true,
+      installedAt:new Date().toISOString(), iconUrl:mod.iconUrl, projectId:mod.id,
+      dependencies: deps.required.map(d => d.id) };
     fs.writeFileSync(metaFile, JSON.stringify(meta, null, 2));
   }
 
   updateInstanceModCount(instanceId, meta.length);
   onProgress({ status: 'done', message: 'Installed!', percent: 100 });
-
-  // Return dependency info so caller can warn user
   return { deps };
 }
 
 async function removeMod(instanceId, modId) {
   const instanceDir = getInstanceDir(instanceId);
+  const modsDir = path.join(instanceDir, 'mods');
   const meta = syncModsWithFolder(instanceId);
   const mod  = meta.find(m => m.id === modId);
   if (!mod) return;
-  const modsDir = path.join(instanceDir, 'mods');
-  // Remove both enabled and disabled versions
   const ep = path.join(modsDir, mod.filename);
   const dp = path.join(modsDir, mod.filename + '.disabled');
   if (fs.existsSync(ep)) fs.unlinkSync(ep);
   if (fs.existsSync(dp)) fs.unlinkSync(dp);
-  const updated = syncModsWithFolder(instanceId);
-  updateInstanceModCount(instanceId, updated.length);
+  updateInstanceModCount(instanceId, syncModsWithFolder(instanceId).length);
 }
 
 async function updateAllMods(instanceId, onProgress) {
   const instanceDir = getInstanceDir(instanceId);
-  const Store = require('electron-store');
-  const store = new Store();
-  const instance = store.get('instances', []).find(i => i.id === instanceId);
+  const instance = new (require('electron-store'))().get('instances', []).find(i => i.id === instanceId);
   if (!instance) throw new Error('Instance not found');
 
   const meta = syncModsWithFolder(instanceId);
@@ -292,68 +223,47 @@ async function updateAllMods(instanceId, onProgress) {
 
   for (let i = 0; i < meta.length; i++) {
     const mod = meta[i];
-    onProgress({ message: `Checking ${mod.title}...`, current: i + 1, total: meta.length });
-
-    if (!mod.id || mod.id.startsWith('manual-') || mod.source === 'manual') {
-      results.push({ mod: mod.title, status: 'skipped' }); continue;
-    }
+    onProgress({ message: `Checking ${mod.title}...`, current: i+1, total: meta.length });
+    if (!mod.id || mod.id.startsWith('manual-') || mod.source === 'manual') { results.push({ mod:mod.title, status:'skipped' }); continue; }
 
     try {
       if (mod.source === 'modrinth') {
         const versions = await getModrinthVersions(mod.id, instance.mcVersion, instance.loader);
-        const releaseVersions = versions.filter(v => v.version_type === 'release');
-        if (!releaseVersions.length) { results.push({ mod: mod.title, status: 'no_release' }); continue; }
-        const latest = releaseVersions[0];
-        const pf = latest.files.find(f => f.primary) || latest.files[0];
-        if (!pf || pf.filename === mod.filename) { results.push({ mod: mod.title, status: 'up_to_date' }); continue; }
-
+        const releases = versions.filter(v => v.version_type === 'release');
+        if (!releases.length) { results.push({ mod:mod.title, status:'no_release' }); continue; }
+        const pf = releases[0].files.find(f => f.primary) || releases[0].files[0];
+        if (!pf || pf.filename === mod.filename) { results.push({ mod:mod.title, status:'up_to_date' }); continue; }
         const modsDir = path.join(instanceDir, 'mods');
-        // Remove old (handle disabled state)
-        const oldEnabled  = path.join(modsDir, mod.filename);
-        const oldDisabled = path.join(modsDir, mod.filename + '.disabled');
         const wasDisabled = !mod.enabled;
-        if (fs.existsSync(oldEnabled))  fs.unlinkSync(oldEnabled);
-        if (fs.existsSync(oldDisabled)) fs.unlinkSync(oldDisabled);
-
-        // Download new — respect previous enabled state
-        const newFilename = wasDisabled ? pf.filename + '.disabled' : pf.filename;
-        onProgress({ message: `Updating ${mod.title}...`, current: i + 1, total: meta.length });
-        await downloadFile(pf.url, path.join(modsDir, newFilename));
-        mod.filename  = pf.filename; // store canonical name
-        mod.updatedAt = new Date().toISOString();
-        results.push({ mod: mod.title, status: 'updated' });
+        [path.join(modsDir,mod.filename), path.join(modsDir,mod.filename+'.disabled')]
+          .forEach(p => { if(fs.existsSync(p)) fs.unlinkSync(p); });
+        onProgress({ message:`Updating ${mod.title}...`, current:i+1, total:meta.length });
+        await downloadFile(pf.url, path.join(modsDir, wasDisabled ? pf.filename+'.disabled' : pf.filename));
+        mod.filename = pf.filename; mod.updatedAt = new Date().toISOString();
+        results.push({ mod:mod.title, status:'updated' });
       }
-    } catch (e) {
-      results.push({ mod: mod.title, status: 'error', error: e.message });
-    }
+    } catch (e) { results.push({ mod:mod.title, status:'error', error:e.message }); }
   }
 
   const metaDir  = path.join(instanceDir, '.celery');
   const metaFile = path.join(metaDir, 'mods.json');
   if (!fs.existsSync(metaDir)) fs.mkdirSync(metaDir, { recursive: true });
   fs.writeFileSync(metaFile, JSON.stringify(meta, null, 2));
-
-  const final = syncModsWithFolder(instanceId);
-  updateInstanceModCount(instanceId, final.length);
+  updateInstanceModCount(instanceId, syncModsWithFolder(instanceId).length);
   return results;
 }
 
-// ── Missing dependency check for launch ───────────────────────────────────────
 async function checkMissingDependencies(instanceId) {
   const meta = await syncAndEnrichMods(instanceId);
   const installedIds = new Set(meta.map(m => m.projectId || m.id).filter(Boolean));
   const missing = [];
-
   for (const mod of meta) {
     if (!mod.enabled) continue;
-    if (!mod.dependencies || !mod.dependencies.length) continue;
+    if (!mod.dependencies?.length) continue;
     for (const depId of mod.dependencies) {
-      if (!installedIds.has(depId)) {
-        missing.push({ mod: mod.title, missingDep: depId });
-      }
+      if (!installedIds.has(depId)) missing.push({ mod: mod.title, missingDep: depId });
     }
   }
-
   return missing;
 }
 
