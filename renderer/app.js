@@ -10,8 +10,11 @@ let openMenuId = null;
 let launchStartTime = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  try { const s = await window.launcher.getSettings(); applyTextSize(s.textSize || 'md'); }
-  catch(e) { applyTextSize('md'); }
+  try {
+    const s = await window.launcher.getSettings();
+    applyTextSize(s.textSize || 'md');
+    if (typeof applyTheme === 'function') applyTheme(s.theme || 'green');
+  } catch(e) { applyTextSize('md'); }
 
   await loadAccounts();
   await loadInstances();
