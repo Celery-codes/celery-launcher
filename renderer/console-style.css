@@ -2,43 +2,66 @@
 #panel-console { display:none; flex-direction:column; padding:0; height:100%; }
 #panel-console.on { display:flex; }
 
-.con-bar { display:flex; align-items:center; gap:8px; padding:10px 16px; background:var(--bg2); border-bottom:1px solid var(--border); flex-shrink:0; flex-wrap:wrap; }
+.con-bar {
+  display:flex; align-items:center; gap:8px; padding:10px 16px;
+  background:var(--bg2); border-bottom:1px solid var(--border);
+  flex-shrink:0; flex-wrap:wrap;
+}
 .con-title { font-size:0.85em; font-weight:500; color:var(--text); }
-.con-count { font-size:0.65em; color:var(--text3); font-family:var(--mono); background:var(--bg4); padding:2px 7px; border-radius:10px; }
+.con-count {
+  font-size:0.65em; color:var(--text3); font-family:var(--mono);
+  background:var(--bg4); padding:2px 7px; border-radius:10px;
+}
 
-.clf { padding:3px 9px; border-radius:4px; font-size:0.72em; font-weight:500; cursor:pointer; border:1px solid var(--border); background:transparent; color:var(--text3); transition:all var(--transition); font-family:var(--sans); }
+/* Filter buttons */
+.clf {
+  padding:3px 9px; border-radius:4px; font-size:0.72em; font-weight:500;
+  cursor:pointer; border:1px solid var(--border); background:transparent;
+  color:var(--text3); transition:all var(--transition); font-family:var(--sans);
+}
 .clf:hover { background:var(--bg4); color:var(--text2); }
 .clf.on { background:var(--green-dim); border-color:rgba(74,222,128,0.3); color:var(--green); }
 
-.con-out { flex:1; overflow-y:auto; font-family:var(--mono); font-size:0.72em; line-height:1.65; padding:6px 10px; background:var(--bg); min-height:0; }
+/* Output area */
+.con-out {
+  flex:1; overflow-y:auto; font-family:var(--mono); font-size:0.72em;
+  line-height:1.65; padding:6px 10px; background:var(--bg); min-height:0;
+}
 .con-out::-webkit-scrollbar { width:4px; }
 .con-out::-webkit-scrollbar-thumb { background:var(--bg5); border-radius:4px; }
 
-/* ── Log lines ── */
-.con-line { padding:1px 4px; border-radius:2px; white-space:pre-wrap; word-break:break-all; display:block; }
+/* Log lines */
+.con-line {
+  padding:1px 4px; border-radius:2px; white-space:pre-wrap;
+  word-break:break-all; display:block;
+}
 .con-ts { color:var(--text4); margin-right:8px; user-select:none; font-size:0.9em; }
 .con-empty { color:var(--text3); font-family:var(--sans); font-size:0.85em; padding:32px; text-align:center; }
 
-/* ── Line level backgrounds ── */
-.con-error { background:rgba(248,113,113,0.07); color:#fca5a5; }
-.con-warn  { background:rgba(251,191,36,0.05);  color:#fcd34d; }
-.con-info  { color:var(--text2); }
-.con-debug { color:var(--text4); }
-.con-trace { color:var(--text4); padding-left:20px; opacity:0.7; }
-.con-chat  { background:rgba(74,222,128,0.05); color:#86efac; }
+/* ── Line level colors (background + text) ── */
+.con-error  { background:rgba(248,113,113,0.07); color:#fca5a5; }
+.con-warn   { background:rgba(251,191,36,0.05);  color:#fcd34d; }
+.con-info   { color:#d4d4d4; }
+.con-debug  { color:#6b7280; }
+.con-trace  { color:#4b5563; padding-left:20px; }
+.con-chat   { background:rgba(74,222,128,0.05); color:#86efac; }
 .con-system { color:#c4b5fd; }
 
-/* ── Inline color spans from colorize() ── */
-span.cl-error  { color:#f87171; font-weight:600; }
-span.cl-warn   { color:#fbbf24; font-weight:600; }
-span.cl-info   { color:#60a5fa; font-weight:600; }
-span.cl-debug  { color:var(--text3); }
-span.cl-ts     { color:var(--text3); }
-span.cl-ok     { color:#4ade80; }
-span.cl-chat   { color:#86efac; font-weight:600; }
-span.cl-launcher { color:#c4b5fd; font-weight:600; }
+/* ── Inline span colors from colorize() ── */
+span.cl-error   { color:#f87171; font-weight:600; }
+span.cl-warn    { color:#fbbf24; font-weight:600; }
+span.cl-info    { color:#60a5fa; font-weight:600; }
+span.cl-debug   { color:#6b7280; }
+span.cl-ts      { color:#4b5563; }
+span.cl-ok      { color:#4ade80; }
+span.cl-chat    { color:#86efac; font-weight:600; }
+span.cl-launcher{ color:#c4b5fd; font-weight:600; }
 .con-mark { background:rgba(251,191,36,0.3); color:#fef08a; border-radius:2px; }
 
 /* ── Nav badge pulse ── */
-.nav-badge { display:none; width:6px; height:6px; border-radius:50%; background:var(--green); margin-left:auto; animation:pulse 1.4s ease-in-out infinite; }
-@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.25;} }
+.nav-badge {
+  display:none; width:6px; height:6px; border-radius:50%;
+  background:var(--green); margin-left:auto;
+  animation:conpulse 1.4s ease-in-out infinite;
+}
+@keyframes conpulse { 0%,100%{opacity:1;} 50%{opacity:0.2;} }

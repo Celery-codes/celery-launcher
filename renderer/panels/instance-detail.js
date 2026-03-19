@@ -34,9 +34,9 @@ async function openInstanceDetail(instanceId) {
       </button>
       <div>
         <div class="pt" style="font-size:1em;margin-bottom:0;">${escHtml(inst.name)}</div>
-        <div class="ps">${inst.mcVersion} &middot; ${inst.loader}${inst.loaderVersion ? ' ' + inst.loaderVersion : ''}${playtime ? ' &middot; ' + playtime + ' played' : ''}</div>
+        <div class="ps">${inst.mcVersion} · ${inst.loader}${inst.loaderVersion ? ' '+inst.loaderVersion : ''}${playtime ? ' · '+playtime+' played' : ''}</div>
       </div>
-      <button class="launch-btn" id="detailLaunchBtn" style="margin-left:auto;padding:6px 16px;font-size:0.8em;">&#9654; Launch</button>
+      <button class="launch-btn" id="detailLaunchBtn" style="margin-left:auto;padding:6px 16px;font-size:12px;">▶ Launch</button>
     </div>
     <div class="mod-tabs" id="detailTabs">
       <div class="mtab on" data-tab="mods">Mods</div>
@@ -44,7 +44,6 @@ async function openInstanceDetail(instanceId) {
       <div class="mtab" data-tab="shaderpacks">Shaders</div>
       <div class="mtab" data-tab="worlds">Worlds</div>
       <div class="mtab" data-tab="servers">Servers</div>
-      <div class="mtab" data-tab="console">Console</div>
       <div class="mtab" data-tab="options">Options Profiles</div>
     </div>
     <div id="detailContent"></div>
@@ -86,23 +85,16 @@ async function loadDetailTab(tab) {
   const content = document.getElementById('detailContent');
   if (!content) return;
   content.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading...</div>';
-
   try {
     if (tab === 'mods')          await loadDetailMods(content);
     else if (tab === 'resourcepacks') await loadDetailFiles(content, 'resourcepacks', 'Resource Packs');
     else if (tab === 'shaderpacks')   await loadDetailFiles(content, 'shaderpacks', 'Shaders');
     else if (tab === 'worlds')        await loadDetailWorlds(content);
     else if (tab === 'servers')       await loadDetailServers(content);
-    else if (tab === 'console')       loadDetailConsole(content);
     else if (tab === 'options')       await loadDetailOptions(content);
   } catch (e) {
     content.innerHTML = `<div class="err-row">Error: ${escHtml(e.message)}</div>`;
   }
-}
-
-function loadDetailConsole(content) {
-  // Render inline console — live, auto-scrolling, filterable
-  renderInlineConsole(content);
 }
 
 async function loadDetailMods(content) {
@@ -111,20 +103,20 @@ async function loadDetailMods(content) {
   if (inst && inst.mods !== installed.length) { inst.mods = installed.length; await saveInstances(); }
 
   if (!installed.length) {
-    content.innerHTML = `<div class="empty-state"><strong>No mods installed</strong>Go to the Mods &amp; Resources tab to browse and install mods.</div>`;
+    content.innerHTML = `<div class="empty-state"><strong>No mods installed</strong>Go to Mods &amp; Resources to browse and install mods.</div>`;
     return;
   }
 
   content.innerHTML = `
     <div style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">
-      <span style="font-size:0.8em;color:var(--text3);">${installed.length} mod${installed.length===1?'':'s'} installed</span>
-      <button class="btn p" id="detailUpdateAllBtn" style="font-size:0.72em;padding:4px 10px;">&#8593; Update All</button>
+      <span style="font-size:12px;color:var(--text3);">${installed.length} mod${installed.length===1?'':'s'} installed</span>
+      <button class="btn p" id="detailUpdateAllBtn" style="font-size:11px;padding:4px 10px;">↑ Update All</button>
     </div>
     <div class="mlist" id="detailModList">
       ${installed.map(m => `
         <div class="mrow" id="detailmod-${escHtml(m.id)}">
           <div class="micon">
-            ${m.iconUrl ? `<img src="${escHtml(m.iconUrl)}" onerror="this.style.display='none'" alt="" loading="lazy">` : '<span style="font-size:18px;color:var(--text3);">&#128230;</span>'}
+            ${m.iconUrl ? `<img src="${escHtml(m.iconUrl)}" onerror="this.style.display='none'" alt="" loading="lazy">` : '<span style="font-size:18px;color:var(--text3);">📦</span>'}
           </div>
           <div class="minfo">
             <div class="mname">${escHtml(m.title || m.filename)}</div>
@@ -135,8 +127,7 @@ async function loadDetailMods(content) {
             </div>
           </div>
           <button class="ibtn inst" data-modid="${escHtml(m.id)}" data-modname="${escHtml(m.title || m.filename)}">Remove</button>
-        </div>
-      `).join('')}
+        </div>`).join('')}
     </div>`;
 
   document.getElementById('detailUpdateAllBtn').addEventListener('click', updateAllDetail);
@@ -162,7 +153,7 @@ async function updateAllDetail() {
     loadDetailTab('mods');
   } else {
     toast('Update failed: ' + result.error);
-    if (btn) { btn.disabled = false; btn.textContent = '&#8593; Update All'; }
+    if (btn) { btn.disabled = false; btn.textContent = '↑ Update All'; }
   }
 }
 
@@ -172,19 +163,21 @@ async function loadDetailFiles(content, folder, label) {
 
   content.innerHTML = `
     <div style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">
-      <span style="font-size:0.8em;color:var(--text3);">${files.length} ${label.toLowerCase()}</span>
-      <button class="btn" id="openFolderBtn" style="font-size:0.72em;">Open folder</button>
+      <span style="font-size:12px;color:var(--text3);">${files.length} ${label.toLowerCase()}</span>
+      <button class="btn" id="openFolderBtn" style="font-size:11px;">Open folder</button>
     </div>
     <div class="mlist">
       ${files.length === 0
         ? `<div class="empty-state"><strong>No ${label.toLowerCase()} installed</strong>Drop files into the folder to add them.</div>`
         : files.map(f => `
           <div class="mrow" style="padding:10px 14px;">
-            <div class="micon"><span style="font-size:18px;color:var(--text3);">&#128450;</span></div>
-            <div class="minfo"><div class="mname">${escHtml(f.name)}</div><div class="mdesc">${formatBytes(f.size)}</div></div>
-            <button class="ibtn inst" data-filename="${escHtml(f.name)}" style="font-size:0.72em;">Remove</button>
-          </div>`).join('')
-      }
+            <div class="micon"><span style="font-size:18px;color:var(--text3);">🗂️</span></div>
+            <div class="minfo">
+              <div class="mname">${escHtml(f.name)}</div>
+              <div class="mdesc">${formatBytes(f.size)}</div>
+            </div>
+            <button class="ibtn inst" data-filename="${escHtml(f.name)}" style="font-size:11px;">Remove</button>
+          </div>`).join('')}
     </div>`;
 
   document.getElementById('openFolderBtn').addEventListener('click', () => {
@@ -205,22 +198,21 @@ async function loadDetailWorlds(content) {
 
   content.innerHTML = `
     <div style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">
-      <span style="font-size:0.8em;color:var(--text3);">${worlds.length} world${worlds.length===1?'':'s'}</span>
-      <button class="btn" id="openSavesBtn" style="font-size:0.72em;">Open saves folder</button>
+      <span style="font-size:12px;color:var(--text3);">${worlds.length} world${worlds.length===1?'':'s'}</span>
+      <button class="btn" id="openSavesBtn" style="font-size:11px;">Open saves folder</button>
     </div>
     <div class="mlist">
       ${worlds.length === 0
         ? `<div class="empty-state"><strong>No worlds yet</strong>Worlds appear here after you create them in-game.</div>`
         : worlds.map(w => `
           <div class="mrow" style="padding:10px 14px;">
-            <div class="micon"><span style="font-size:20px;">&#127757;</span></div>
+            <div class="micon"><span style="font-size:20px;">🌍</span></div>
             <div class="minfo">
               <div class="mname">${escHtml(w.name)}</div>
               <div class="mdesc">Last modified: ${w.modified ? new Date(w.modified).toLocaleDateString() : 'Unknown'}</div>
             </div>
-            <button class="btn" data-world="${escHtml(w.name)}" style="font-size:0.72em;">Open</button>
-          </div>`).join('')
-      }
+            <button class="btn" data-world="${escHtml(w.name)}" style="font-size:11px;">Open</button>
+          </div>`).join('')}
     </div>`;
 
   document.getElementById('openSavesBtn').addEventListener('click', () => {
@@ -238,20 +230,19 @@ async function loadDetailServers(content) {
   const servers = result.servers || [];
   content.innerHTML = `
     <div style="margin-bottom:12px;">
-      <span style="font-size:0.8em;color:var(--text3);">${servers.length} saved server${servers.length===1?'':'s'}</span>
+      <span style="font-size:12px;color:var(--text3);">${servers.length} saved server${servers.length===1?'':'s'}</span>
     </div>
     <div class="mlist">
       ${servers.length === 0
         ? `<div class="empty-state"><strong>No servers saved</strong>Add servers in-game and they'll appear here.</div>`
         : servers.map(s => `
           <div class="mrow" style="padding:10px 14px;">
-            <div class="micon"><span style="font-size:20px;">&#128421;</span></div>
+            <div class="micon"><span style="font-size:20px;">🖥️</span></div>
             <div class="minfo">
               <div class="mname">${escHtml(s.name || 'Unnamed Server')}</div>
               <div class="mdesc" style="font-family:var(--mono);">${escHtml(s.ip || '')}</div>
             </div>
-          </div>`).join('')
-      }
+          </div>`).join('')}
     </div>`;
 }
 
@@ -259,9 +250,9 @@ async function loadDetailOptions(content) {
   const profiles = await window.launcher.listOptionProfiles();
   content.innerHTML = `
     <div style="margin-bottom:16px;">
-      <div style="font-size:0.85em;color:var(--text2);margin-bottom:10px;line-height:1.6;">
+      <div style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.6;">
         Save this instance's current keybinds and settings as a reusable profile.
-        <br><span style="color:var(--text3);font-size:0.85em;">Launch the game at least once to generate options.txt before saving.</span>
+        <br><span style="color:var(--text3);font-size:12px;">Launch the game at least once to generate options.txt before saving.</span>
       </div>
       <button class="btn p" id="saveOptionsBtn">+ Save current options as profile</button>
     </div>
@@ -270,7 +261,7 @@ async function loadDetailOptions(content) {
         ? `<div class="empty-state"><strong>No option profiles yet</strong>Save a profile from any instance to reuse its settings.</div>`
         : profiles.map(p => `
           <div class="mrow" style="padding:10px 14px;">
-            <div class="micon"><span style="font-size:20px;">&#9881;</span></div>
+            <div class="micon"><span style="font-size:20px;">⚙️</span></div>
             <div class="minfo">
               <div class="mname">${escHtml(p.name)}</div>
               <div class="mdesc">Saved ${p.createdAt ? new Date(p.createdAt).toLocaleDateString() : ''}</div>
@@ -279,8 +270,7 @@ async function loadDetailOptions(content) {
               <button class="ibtn" data-pid="${escHtml(p.id)}" data-pname="${escHtml(p.name)}">Apply</button>
               <button class="ibtn inst" data-pid="${escHtml(p.id)}" data-pname="${escHtml(p.name)}">Delete</button>
             </div>
-          </div>`).join('')
-      }
+          </div>`).join('')}
     </div>`;
 
   document.getElementById('saveOptionsBtn').addEventListener('click', async () => {
@@ -318,6 +308,5 @@ function formatPlaytime(seconds) {
   if (!seconds || seconds < 60) return '';
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return h + 'h ' + m + 'm';
-  return m + 'm';
+  return h > 0 ? h+'h '+m+'m' : m+'m';
 }
