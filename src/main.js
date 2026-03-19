@@ -56,7 +56,7 @@ function closeLogSession() {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 // Make a safe folder name from instance name, e.g. "My SMP World" → "My_SMP_World"
 function instanceFolderName(instance) {
-  const safe = instance.name.replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, '_').slice(0, 50);
+  const safe = inst.name.replace(/[^a-zA-Z0-9 ._-]/g, '').replace(/\s+/g, '_').slice(0, 50);
   return safe || instance.id;
 }
 
@@ -226,6 +226,27 @@ ipcMain.handle('mods-get-installed', async (_, instanceId) => { try { return awa
 ipcMain.handle('mods-update-all', async (_, instanceId) => {
   try { const results = await updateAllMods(instanceId, p => mainWindow.webContents.send('mod-update-progress', p)); return { success: true, results }; }
   catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('mods-toggle', async (_, { instanceId, modId, enable }) => {
+  try {
+    const { toggleMod } = require('./launcher/mods');
+    return toggleMod(instanceId, modId, enable);
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('mods-toggle-bulk', async (_, { instanceId, modIds, enable }) => {
+  try {
+    const { toggleMods } = require('./launcher/mods');
+    return toggleMods(instanceId, modIds, enable);
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('mods-check-deps', async (_, instanceId) => {
+  try {
+    const { checkMissingDependencies } = require('./launcher/mods');
+    return await checkMissingDependencies(instanceId);
+  } catch (e) { return []; }
 });
 
 // Settings

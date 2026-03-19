@@ -1,0 +1,40 @@
+/* ── Mod manager toolbar ── */
+.mod-mgr-bar {
+  display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+  margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid var(--border);
+}
+
+/* ── Status badges ── */
+.mod-status-badge {
+  font-size:0.65em; font-weight:600; padding:2px 7px; border-radius:10px;
+  letter-spacing:.3px; white-space:nowrap;
+}
+.mod-enabled  { background:rgba(74,222,128,0.12); color:var(--green); border:1px solid rgba(74,222,128,0.25); }
+.mod-dis      { background:rgba(248,113,113,0.1); color:#f87171; border:1px solid rgba(248,113,113,0.2); }
+
+/* ── Disabled mod row dimming ── */
+.mod-disabled-row { opacity:0.5; }
+.mod-disabled-row .mname { text-decoration:line-through; }
+.mod-row.mod-disabled td { opacity:0.5; }
+.mod-row.mod-disabled .mname { text-decoration:line-through; }
+
+/* ── Compact table layout ── */
+.mod-table {
+  width:100%; border-collapse:collapse; font-size:0.8em;
+}
+.mod-table th {
+  text-align:left; color:var(--text3); font-size:0.8em; font-weight:500;
+  padding:6px 8px; border-bottom:1px solid var(--border);
+}
+.mod-table td { padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.04); vertical-align:middle; }
+.mod-table tr:hover td { background:var(--bg3); }
+
+/* ── Dependency warning banner ── */
+.dep-warning {
+  background:rgba(251,191,36,0.08); border:1px solid rgba(251,191,36,0.25);
+  border-radius:var(--radius-sm); padding:10px 14px; margin-bottom:10px;
+  font-size:0.8em; color:#fcd34d; line-height:1.5;
+}
+.dep-warning strong { color:#fbbf24; }
+.dep-warning .dep-list { margin-top:4px; padding-left:14px; }
+.dep-warning .dep-list li { margin:2px 0; }

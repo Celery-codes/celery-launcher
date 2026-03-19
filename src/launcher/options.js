@@ -46,7 +46,7 @@ function getInstanceDir(instanceId) {
   const inst = instances.find(i => i.id === instanceId);
 
   if (inst) {
-    const safe = inst.name.replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, '_').slice(0, 50);
+    const safe = inst.name.replace(/[^a-zA-Z0-9 ._-]/g, '').replace(/\s+/g, '_').slice(0, 50);
     const nameDir = path.join(INSTANCES_DIR, safe || inst.id);
     if (fs.existsSync(nameDir)) return nameDir;
   }

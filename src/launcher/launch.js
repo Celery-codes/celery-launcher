@@ -14,7 +14,7 @@ const AIKAR_FLAGS = [
 ];
 
 function instanceFolderName(instance) {
-  const safe = instance.name.replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, '_').slice(0, 50);
+  const safe = inst.name.replace(/[^a-zA-Z0-9 ._-]/g, '').replace(/\s+/g, '_').slice(0, 50);
   return safe || instance.id;
 }
 

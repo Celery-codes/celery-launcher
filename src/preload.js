@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld('launcher', {
   removeMod: (opts) => ipcRenderer.invoke('mods-remove', opts),
   getInstalledMods: (id) => ipcRenderer.invoke('mods-get-installed', id),
   updateAllMods: (id) => ipcRenderer.invoke('mods-update-all', id),
+  toggleMod: (opts) => ipcRenderer.invoke('mods-toggle', opts),
+  toggleMods: (opts) => ipcRenderer.invoke('mods-toggle-bulk', opts),
+  checkMissingDeps: (id) => ipcRenderer.invoke('mods-check-deps', id),
   onModInstallProgress: (cb) => ipcRenderer.on('mod-install-progress', (_, d) => cb(d)),
   onModUpdateProgress: (cb) => ipcRenderer.on('mod-update-progress', (_, d) => cb(d)),
 
@@ -54,16 +57,17 @@ contextBridge.exposeInMainWorld('launcher', {
   getSkinHead: (opts) => ipcRenderer.invoke('skin-get-head', opts),
   setSkinWindowIcon: (opts) => ipcRenderer.invoke('skin-set-window-icon', opts),
 
-  // Log file management
   saveLogFile: (text) => ipcRenderer.invoke('save-log-file', text),
   openLogFolder: () => ipcRenderer.invoke('open-log-folder'),
   clearLogFolder: () => ipcRenderer.invoke('clear-log-folder'),
   onLogFilePath: (cb) => ipcRenderer.on('log-file-path', (_, p) => cb(p)),
 
-  // Playtime
   onPlaytimeUpdate: (cb) => ipcRenderer.on('playtime-update', (_, d) => cb(d)),
 
-  // Loader API
   installLoaderApi: (opts) => ipcRenderer.invoke('loader-api-install', opts),
   onLoaderApiProgress: (cb) => ipcRenderer.on('loader-api-progress', (_, d) => cb(d)),
+
+  toggleMod: (opts) => ipcRenderer.invoke('mods-toggle', opts),
+  toggleMods: (opts) => ipcRenderer.invoke('mods-toggle-bulk', opts),
+  checkMissingDeps: (id) => ipcRenderer.invoke('mods-check-deps', id),
 });
