@@ -6,7 +6,8 @@ async function renderAccountsPanel() {
     <div class="ph"><div class="pt">Accounts</div><div class="ps">Manage your Microsoft / Minecraft accounts</div></div>
     <div id="accountsList"></div>
     <button class="btn p" id="addAccountBtn" onclick="addAccount()">+ Add Microsoft Account</button>
-    <div id="accountLoginStatus" style="margin-top:12px;font-size:12px;color:var(--text3);"></div>
+    <div id="deviceCodeBox" style="display:none;margin-top:16px;"></div>
+    <div id="accountLoginStatus" style="margin-top:10px;font-size:12px;color:var(--text3);"></div>
   `;
 
   const list = document.getElementById('accountsList');
@@ -33,25 +34,64 @@ async function renderAccountsPanel() {
 async function addAccount() {
   const btn = document.getElementById('addAccountBtn');
   const status = document.getElementById('accountLoginStatus');
+  const codeBox = document.getElementById('deviceCodeBox');
+
   btn.disabled = true;
-  btn.textContent = 'Opening sign-in...';
-  status.textContent = 'A Microsoft login window will open. Sign in with your Minecraft account.';
+  btn.textContent = 'Opening browser...';
+  status.textContent = '';
+  codeBox.style.display = 'none';
+
+  // Listen for the device code from main process
+  window.launcher.onDeviceCode((userCode) => {
+    // Show the code prominently in the UI
+    codeBox.style.display = 'block';
+    codeBox.innerHTML = `
+      <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:16px 20px;">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Sign-in code</div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <div style="font-size:28px;font-weight:700;font-family:var(--mono);color:var(--green);letter-spacing:4px;">${escHtml(userCode)}</div>
+          <button class="btn" onclick="navigator.clipboard.writeText('${escHtml(userCode)}').then(()=>toast('Code copied!'))" style="font-size:11px;">Copy</button>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:var(--text2);line-height:1.6;">
+          Your browser has opened <strong style="color:var(--text);">microsoft.com/link</strong><br>
+          Type the code above and sign in with your Microsoft account.
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:var(--text3);">
+          Waiting for sign-in
+          <span id="dotAnim">.</span>
+        </div>
+      </div>
+    `;
+    // Animate the waiting dots
+    let dots = 0;
+    const dotEl = document.getElementById('dotAnim');
+    const dotTimer = setInterval(() => {
+      if (!dotEl || !document.getElementById('deviceCodeBox')) { clearInterval(dotTimer); return; }
+      dots = (dots + 1) % 4;
+      dotEl.textContent = '.'.repeat(dots + 1);
+    }, 500);
+  });
 
   const result = await window.launcher.loginMicrosoft();
 
   btn.disabled = false;
   btn.textContent = '+ Add Microsoft Account';
+  codeBox.style.display = 'none';
 
   if (result.success) {
     activeAccountUuid = result.account.uuid;
-    await window.launcher.saveSettings({ ...(await window.launcher.getSettings()), activeAccount: activeAccountUuid });
+    await window.launcher.saveSettings({
+      ...(await window.launcher.getSettings()),
+      activeAccount: activeAccountUuid
+    });
     updateSidebarAccount(result.account);
+    status.style.color = 'var(--text3)';
     status.textContent = '';
     renderAccountsPanel();
-    toast(`Signed in as ${result.account.username}`);
-    // Fetch skin and update sidebar avatar + window icon
+    toast('Signed in as ' + result.account.username);
     loadAccountSkin(result.account);
   } else {
+    codeBox.style.display = 'none';
     status.style.color = 'var(--red)';
     status.textContent = 'Login failed: ' + result.error;
     toast('Login failed');
@@ -65,8 +105,7 @@ async function switchAccount(uuid) {
   const accounts = await window.launcher.getAccounts();
   updateSidebarAccount(accounts.find(a => a.uuid === uuid));
   renderAccountsPanel();
-  const accounts2 = await window.launcher.getAccounts();
-  const switched = accounts2.find(a => a.uuid === uuid);
+  const switched = accounts.find(a => a.uuid === uuid);
   if (switched) loadAccountSkin(switched);
   toast('Account switched');
 }
@@ -88,22 +127,16 @@ async function loadAccountSkin(account) {
   try {
     const result = await window.launcher.getSkinHead({ uuid: account.uuid, username: account.username });
     if (result.success && result.dataUrl) {
-      // Update sidebar avatar with skin head
       const av = document.getElementById('sidebarAvatar');
       if (av) {
         av.innerHTML = `<img src="${result.dataUrl}" style="width:28px;height:28px;border-radius:6px;image-rendering:pixelated;" alt="${account.username}">`;
       }
-      // Update window icon
       await window.launcher.setSkinWindowIcon({ uuid: account.uuid, username: account.username });
-      // Store the dataUrl for use in account rows
       account._skinDataUrl = result.dataUrl;
     }
-  } catch (e) {
-    console.error('Skin load error:', e);
-  }
+  } catch (e) {}
 }
 
-// Called from app.js on startup if account already logged in
 async function initSkinForAccount(account) {
   if (account) await loadAccountSkin(account);
 }

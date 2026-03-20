@@ -89,10 +89,18 @@ ipcMain.on('window-maximize', () => { if (mainWindow.isMaximized()) mainWindow.u
 ipcMain.on('window-close', () => mainWindow.close());
 
 // Auth
-ipcMain.handle('auth-microsoft', async () => {
-  try { const account = await authenticateMicrosoft(mainWindow); store.set('account', account); return { success: true, account }; }
-  catch (e) { return { success: false, error: e.message }; }
-});
+ ipcMain.handle('auth-microsoft', async () => {
+    try {
+      const account = await authenticateMicrosoft(mainWindow, (userCode) => {
+        // Send the user code to the renderer so it can display it
+        mainWindow.webContents.send('auth-device-code', userCode);
+      });
+      store.set('account', account);
+      return { success: true, account };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
 ipcMain.handle('auth-logout', async (_, uuid) => {
   await logout(uuid);
   store.set('accounts', store.get('accounts', []).filter(a => a.uuid !== uuid));

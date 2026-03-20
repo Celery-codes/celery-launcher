@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('launcher', {
   getAccounts: () => ipcRenderer.invoke('auth-get-accounts'),
   setActiveAccount: (uuid) => ipcRenderer.invoke('auth-set-active', uuid),
   refreshAccount: (uuid) => ipcRenderer.invoke('auth-refresh', uuid),
+  onDeviceCode: (cb) => ipcRenderer.on('auth-device-code', (_, code) => cb(code)),
 
   getInstances: () => ipcRenderer.invoke('instances-get'),
   saveInstances: (instances) => ipcRenderer.invoke('instances-save', instances),
@@ -66,8 +67,4 @@ contextBridge.exposeInMainWorld('launcher', {
 
   installLoaderApi: (opts) => ipcRenderer.invoke('loader-api-install', opts),
   onLoaderApiProgress: (cb) => ipcRenderer.on('loader-api-progress', (_, d) => cb(d)),
-
-  toggleMod: (opts) => ipcRenderer.invoke('mods-toggle', opts),
-  toggleMods: (opts) => ipcRenderer.invoke('mods-toggle-bulk', opts),
-  checkMissingDeps: (id) => ipcRenderer.invoke('mods-check-deps', id),
 });
