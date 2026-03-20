@@ -1,22 +1,44 @@
-/* ── Theme buttons in settings ── */
-.theme-btn {
-  display:inline-flex; align-items:center; gap:6px;
-  padding:5px 11px; border-radius:var(--radius-sm);
-  font-size:12px; font-weight:500; cursor:pointer;
-  border:1px solid var(--border2); background:var(--bg3);
-  color:var(--text2); transition:all var(--transition);
-  font-family:var(--sans);
-}
-.theme-btn:hover { background:var(--bg4); color:var(--text); border-color:var(--border3); }
-.theme-btn.on {
-  border-color:var(--tbg,var(--green));
-  background:color-mix(in srgb, var(--tbg,var(--green)) 12%, transparent);
-  color:var(--tbg,var(--green));
-}
-.theme-swatch {
-  display:inline-block; width:10px; height:10px; border-radius:50%;
-  background:var(--tbg,var(--green)); flex-shrink:0;
+/* ── Theme picker — matches launcher button style ── */
+.theme-picker {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
 }
 
-/* ── Launch button — use CSS variable for text color ── */
-.launch-btn { color:var(--launch-text,#000); }
+.theme-btn {
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  padding:6px 12px;
+  border-radius:var(--radius-sm);
+  font-size:12px;
+  font-weight:500;
+  cursor:pointer;
+  border:1px solid var(--border2);
+  background:var(--bg3);
+  color:var(--text2);
+  transition:all var(--transition);
+  font-family:var(--sans);
+  white-space:nowrap;
+}
+.theme-btn:hover {
+  background:var(--bg4);
+  color:var(--text);
+  border-color:var(--border3);
+}
+.theme-btn.on {
+  background:color-mix(in srgb, var(--tbg, var(--green)) 12%, var(--bg3));
+  border-color:color-mix(in srgb, var(--tbg, var(--green)) 50%, transparent);
+  color:var(--tbg, var(--green));
+}
+.theme-swatch {
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  background:var(--tbg, var(--green));
+  flex-shrink:0;
+  box-shadow:0 0 0 1px rgba(0,0,0,0.2);
+}
+
+/* Launch button text color via CSS var */
+.launch-btn { color:var(--launch-text, #000); }

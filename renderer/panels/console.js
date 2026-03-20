@@ -36,11 +36,8 @@ function appendConsoleLine(raw, forceLevel) {
   const countEl = document.getElementById('consoleLineCount');
   if (countEl) countEl.textContent = consoleLines.length + ' lines';
 
-  // Append new lines directly to DOM — never rebuild innerHTML
   const out = document.getElementById('conOut');
   if (!out) return;
-
-  // Remove placeholder if present
   const empty = out.querySelector('.con-empty');
   if (empty) out.innerHTML = '';
 
@@ -52,11 +49,7 @@ function appendConsoleLine(raw, forceLevel) {
     frag.appendChild(buildLineEl(line, sq));
   }
   out.appendChild(frag);
-
-  // requestAnimationFrame ensures DOM has painted before we measure scrollHeight
-  if (consoleAutoScroll) {
-    requestAnimationFrame(() => { out.scrollTop = out.scrollHeight; });
-  }
+  if (consoleAutoScroll) requestAnimationFrame(() => { out.scrollTop = out.scrollHeight; });
 }
 
 function buildLineEl(line, sq) {
@@ -110,21 +103,14 @@ function parseLogLine(raw, forceLevel) {
 }
 
 function colorize(html, level) {
-  // Level tags — must match [WARN], [ERROR] etc inside brackets
-  html = html.replace(/(\[(?:FATAL|ERROR)\])/g,  '<span class="cl-error">$1</span>');
-  html = html.replace(/(\[WARN\])/g,              '<span class="cl-warn">$1</span>');
-  html = html.replace(/(\[INFO\])/g,              '<span class="cl-info">$1</span>');
-  html = html.replace(/(\[(?:DEBUG|TRACE)\])/g,   '<span class="cl-debug">$1</span>');
-  // Timestamp at start of line
+  html = html.replace(/\[(FATAL|ERROR)\]/g,  '<span class="cl-error">[$1]</span>');
+  html = html.replace(/\[(WARN)\]/g,          '<span class="cl-warn">[$1]</span>');
+  html = html.replace(/\[(INFO)\]/g,          '<span class="cl-info">[$1]</span>');
+  html = html.replace(/\[(DEBUG|TRACE)\]/g,   '<span class="cl-debug">[$1]</span>');
   html = html.replace(/^(\[\d{2}:\d{2}:\d{2}\])/g, '<span class="cl-ts">$1</span>');
-  // Java exceptions
-  html = html.replace(/(\b\w+Exception\b)/g, '<span class="cl-error">$1</span>');
-  // Chat player names
+  html = html.replace(/(\b\w+Exception\b)/g,  '<span class="cl-error">$1</span>');
   html = html.replace(/(&lt;[A-Za-z0-9_]{1,16}&gt;)/g, '<span class="cl-chat">$1</span>');
-  // Success words
-  html = html.replace(/\b(Loading|Loaded|Starting|Started|Done|Initialized|Preparing)\b/g,
-    '<span class="cl-ok">$1</span>');
-  // Launcher prefix
+  html = html.replace(/\b(Loading|Loaded|Starting|Started|Done|Initialized|Preparing)\b/g, '<span class="cl-ok">$1</span>');
   html = html.replace(/(\[Celery(?:Launcher)?\])/g, '<span class="cl-launcher">$1</span>');
   return html;
 }
@@ -134,11 +120,28 @@ function renderConsolePanel() {
   if (!panel) return;
   panel.innerHTML = `
     <div class="con-bar">
-      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
+      <div class="con-bar-top">
         <span class="con-title">Console</span>
         <span class="con-count" id="consoleLineCount">${consoleLines.length} lines</span>
+        <div style="margin-left:auto;display:flex;gap:5px;">
+          <button class="btn ${consoleAutoScroll?'p':''}" id="conScrollBtn" onclick="toggleConScroll()" title="Auto-scroll">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 2V11M4 8L8 12L12 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="btn" onclick="clearConsole()">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 3L13 13M13 3L3 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            Clear
+          </button>
+          <button class="btn" onclick="copyConsole()">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M3 11V3C3 2.45 3.45 2 4 2H11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            Copy
+          </button>
+          <button class="btn" onclick="window.launcher.openLogFolder && window.launcher.openLogFolder()">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7.5 5H12.5C13.33 5 14 5.67 14 6.5V12.5C14 13.33 13.33 14 12.5 14H3.5C2.67 14 2 13.33 2 12.5V4.5Z" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
+            Logs
+          </button>
+        </div>
       </div>
-      <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+      <div class="con-bar-controls">
         <div style="display:flex;gap:3px;">
           ${['all','info','warn','error','debug','chat','system'].map(f => `
             <button class="clf ${consoleFilter===f?'on':''}" data-f="${f}" onclick="setConFilter('${f}')">${
@@ -146,22 +149,7 @@ function renderConsolePanel() {
             }</button>`).join('')}
         </div>
         <input class="sbox" id="conSearch" placeholder="Search…" value="${escHtml(consoleSearch)}"
-          oninput="setConSearch(this.value)" style="width:140px;">
-        <button class="btn ${consoleAutoScroll?'p':''}" id="conScrollBtn" onclick="toggleConScroll()" title="Auto-scroll">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 2V11M4 8L8 12L12 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <button class="btn" onclick="clearConsole()">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 3L13 13M13 3L3 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          Clear
-        </button>
-        <button class="btn" onclick="copyConsole()">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M3 11V3C3 2.45 3.45 2 4 2H11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-          Copy
-        </button>
-        <button class="btn" onclick="openLogFolder ? openLogFolder() : null">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7.5 5H12.5C13.33 5 14 5.67 14 6.5V12.5C14 13.33 13.33 14 12.5 14H3.5C2.67 14 2 13.33 2 12.5V4.5Z" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
-          Logs
-        </button>
+          oninput="setConSearch(this.value)" style="flex:1;min-width:120px;max-width:200px;">
       </div>
     </div>
     <div class="con-out" id="conOut"></div>
@@ -188,11 +176,9 @@ function setConSearch(val) { consoleSearch = val; rebuildConsoleOutput(); }
 function toggleConScroll() {
   consoleAutoScroll = !consoleAutoScroll;
   document.getElementById('conScrollBtn')?.classList.toggle('p', consoleAutoScroll);
-  if (consoleAutoScroll) {
-    requestAnimationFrame(() => {
-      const o = document.getElementById('conOut'); if (o) o.scrollTop = o.scrollHeight;
-    });
-  }
+  if (consoleAutoScroll) requestAnimationFrame(() => {
+    const o = document.getElementById('conOut'); if (o) o.scrollTop = o.scrollHeight;
+  });
 }
 
 function clearConsole() {
@@ -206,10 +192,6 @@ function copyConsole() {
   navigator.clipboard.writeText(text)
     .then(() => toast('Copied ' + filteredLines().length + ' lines'))
     .catch(() => toast('Copy failed'));
-}
-
-async function openLogFolder() {
-  if (window.launcher.openLogFolder) await window.launcher.openLogFolder();
 }
 
 function openConsolePanel() {

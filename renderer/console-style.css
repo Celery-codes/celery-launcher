@@ -2,10 +2,26 @@
 #panel-console { display:none; flex-direction:column; padding:0; height:100%; }
 #panel-console.on { display:flex; }
 
+/* Toolbar — two rows: title row + controls row */
 .con-bar {
-  display:flex; align-items:center; gap:8px; padding:10px 16px;
-  background:var(--bg2); border-bottom:1px solid var(--border);
-  flex-shrink:0; flex-wrap:wrap;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  padding:10px 14px;
+  background:var(--bg2);
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.con-bar-top {
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.con-bar-controls {
+  display:flex;
+  align-items:center;
+  gap:5px;
+  flex-wrap:wrap;
 }
 .con-title { font-size:0.85em; font-weight:500; color:var(--text); }
 .con-count {
@@ -31,14 +47,11 @@
 .con-out::-webkit-scrollbar-thumb { background:var(--bg5); border-radius:4px; }
 
 /* Log lines */
-.con-line {
-  padding:1px 4px; border-radius:2px; white-space:pre-wrap;
-  word-break:break-all; display:block;
-}
+.con-line { padding:1px 4px; border-radius:2px; white-space:pre-wrap; word-break:break-all; display:block; }
 .con-ts { color:var(--text4); margin-right:8px; user-select:none; font-size:0.9em; }
 .con-empty { color:var(--text3); font-family:var(--sans); font-size:0.85em; padding:32px; text-align:center; }
 
-/* ── Line level colors (background + text) ── */
+/* Line level colors */
 .con-error  { background:rgba(248,113,113,0.07); color:#fca5a5; }
 .con-warn   { background:rgba(251,191,36,0.05);  color:#fcd34d; }
 .con-info   { color:#d4d4d4; }
@@ -47,7 +60,7 @@
 .con-chat   { background:rgba(74,222,128,0.05); color:#86efac; }
 .con-system { color:#c4b5fd; }
 
-/* ── Inline span colors from colorize() ── */
+/* Inline spans from colorize() */
 span.cl-error   { color:#f87171; font-weight:600; }
 span.cl-warn    { color:#fbbf24; font-weight:600; }
 span.cl-info    { color:#60a5fa; font-weight:600; }
@@ -58,7 +71,7 @@ span.cl-chat    { color:#86efac; font-weight:600; }
 span.cl-launcher{ color:#c4b5fd; font-weight:600; }
 .con-mark { background:rgba(251,191,36,0.3); color:#fef08a; border-radius:2px; }
 
-/* ── Nav badge pulse ── */
+/* Nav badge */
 .nav-badge {
   display:none; width:6px; height:6px; border-radius:50%;
   background:var(--green); margin-left:auto;
