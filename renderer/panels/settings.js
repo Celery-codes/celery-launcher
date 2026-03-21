@@ -68,17 +68,14 @@ function applyTheme(themeKey) {
   for (const [key, val] of Object.entries(theme)) {
     if (key.startsWith('--')) root.style.setProperty(key, val);
   }
-  // Map accent vars to legacy var names used in style.css
-  root.style.setProperty('--green',  theme['--accent']);
-  root.style.setProperty('--green2', theme['--accent2']);
-  root.style.setProperty('--green3', theme['--accent3']);
-  root.style.setProperty('--green4', theme['--accent4']);
+  root.style.setProperty('--green',      theme['--accent']);
+  root.style.setProperty('--green2',     theme['--accent2']);
+  root.style.setProperty('--green3',     theme['--accent3']);
+  root.style.setProperty('--green4',     theme['--accent4']);
   root.style.setProperty('--green-dim',  theme['--accent-dim']);
   root.style.setProperty('--green-dim2', theme['--accent-dim2']);
   root.style.setProperty('--green-dim3', theme['--accent-dim3']);
-  // Launch button text color
   root.style.setProperty('--launch-text', theme['--launch-btn-text'] || '#000');
-  // Update launch button text color via inline style trick
   document.querySelectorAll('.launch-btn').forEach(btn => {
     btn.style.color = theme['--launch-btn-text'] || '#000';
   });
@@ -86,9 +83,39 @@ function applyTheme(themeKey) {
 
 let currentSettings = {};
 
+// ── Update listener — wire once ───────────────────────────────────────────────
+let _updateListenerWired = false;
+function wireUpdateListener() {
+  if (_updateListenerWired || !window.launcher.onUpdateStatus) return;
+  _updateListenerWired = true;
+  window.launcher.onUpdateStatus((data) => {
+    const statusEl = document.getElementById('updateStatusText');
+    const ctrlEl   = document.getElementById('updateControls');
+    if (!statusEl || !ctrlEl) return;
+    statusEl.textContent = data.message;
+    if (data.status === 'available') {
+      ctrlEl.innerHTML = `
+        <button class="btn p" onclick="downloadUpdate()">Download v${data.version}</button>`;
+    } else if (data.status === 'downloading') {
+      ctrlEl.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="progress-bar" style="width:140px;"><div class="progress-fill" style="width:${data.percent||0}%"></div></div>
+          <span style="font-size:11px;color:var(--text3);">${data.percent||0}%</span>
+        </div>`;
+    } else if (data.status === 'ready') {
+      ctrlEl.innerHTML = `
+        <button class="btn p" onclick="installUpdate()">Restart &amp; install</button>`;
+    } else {
+      ctrlEl.innerHTML = `
+        <button class="btn" onclick="checkForUpdate()">Check for updates</button>`;
+    }
+  });
+}
+
 async function renderSettingsPanel() {
   const panel = document.getElementById('panel-settings');
   currentSettings = await window.launcher.getSettings();
+  wireUpdateListener();
 
   const ram      = currentSettings.ram || 4;
   const jvmArgs  = currentSettings.customJvmArgs || '';
@@ -141,8 +168,8 @@ async function renderSettingsPanel() {
       <div class="s-stitle">Java</div>
       <div class="s-row">
         <div class="s-lbl"><div class="s-lname">Java path</div><div class="s-ldesc">${escHtml(javaPath) || 'Auto-detect (JAVA_HOME and common install paths)'}</div></div>
-        <div class="s-ctrl" style="display:flex;gap:8px;">
-          <input class="sinput" id="javaPathInput" value="${escHtml(javaPath)}" placeholder="Auto" style="width:160px" onchange="saveSetting('javaPath',this.value)">
+        <div class="s-ctrl">
+          <input class="sinput" id="javaPathInput" value="${escHtml(javaPath)}" placeholder="Auto" style="width:200px" onchange="saveSetting('javaPath',this.value)">
         </div>
       </div>
       <div class="s-row">
@@ -155,15 +182,14 @@ async function renderSettingsPanel() {
       <div class="s-stitle">Appearance</div>
       <div class="s-row">
         <div class="s-lbl"><div class="s-lname">Color theme</div><div class="s-ldesc">Changes the accent color throughout the launcher</div></div>
-        <div class="s-ctrl" style="display:flex;gap:6px;flex-wrap:wrap;">
-          ${Object.entries(THEMES).map(([key, t]) => `
-            <button class="theme-btn ${theme===key?'on':''}" id="theme-${key}"
-              onclick="setTheme('${key}')" title="${t.label}"
-              style="--tbg:${t['--accent']}">
-              <span class="theme-swatch"></span>
-              <span>${t.emoji} ${t.label}</span>
-            </button>
-          `).join('')}
+        <div class="s-ctrl">
+          <div class="theme-picker">
+            ${Object.entries(THEMES).map(([key, t]) => `
+              <button class="theme-btn ${theme===key?'on':''}" id="theme-${key}"
+                onclick="setTheme('${key}')" style="--tbg:${t['--accent']}">
+                <span class="theme-swatch"></span>${t.emoji} ${t.label}
+              </button>`).join('')}
+          </div>
         </div>
       </div>
       <div class="s-row">
@@ -174,8 +200,7 @@ async function renderSettingsPanel() {
               <button class="btn ${textSize===s?'p':''}" id="tsize-${s}"
                 style="padding:4px 10px;font-size:11px;" onclick="setTextSize('${s}')">
                 ${{sm:'Normal',md:'Large',lg:'X-Large',xl:'Huge'}[s]}
-              </button>
-            `).join('')}
+              </button>`).join('')}
           </div>
         </div>
       </div>
@@ -190,6 +215,19 @@ async function renderSettingsPanel() {
     </div>
 
     <div class="s-section">
+      <div class="s-stitle">Updates</div>
+      <div class="s-row">
+        <div class="s-lbl">
+          <div class="s-lname">Celery Launcher</div>
+          <div class="s-ldesc" id="updateStatusText">Click to check for the latest version.</div>
+        </div>
+        <div class="s-ctrl" id="updateControls">
+          <button class="btn" id="checkUpdateBtn" onclick="checkForUpdate()">Check for updates</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="s-section">
       <div class="s-stitle">System</div>
       <div class="s-row">
         <div class="s-lbl"><div class="s-lname">Create desktop shortcut</div><div class="s-ldesc">Launch Celery Launcher without opening a terminal window</div></div>
@@ -198,19 +236,6 @@ async function renderSettingsPanel() {
       <div class="s-row">
         <div class="s-lbl"><div class="s-lname">Launcher data directory</div><div class="s-ldesc">Where instances, versions, and assets are stored</div></div>
         <div class="s-ctrl"><button class="btn" onclick="window.launcher.openInstanceFolder('..')">Open folder</button></div>
-      </div>
-    </div>
-
-    <div class="s-section">
-      <div class="s-stitle">Updates</div>
-      <div class="s-row">
-        <div class="s-lbl">
-          <div class="s-lname">Celery Launcher updates</div>
-          <div class="s-ldesc" id="updateStatusText">Check for the latest version from GitHub.</div>
-        </div>
-        <div class="s-ctrl" style="display:flex;gap:8px;" id="updateControls">
-          <button class="btn" id="checkUpdateBtn" onclick="checkForUpdate()">Check for updates</button>
-        </div>
       </div>
     </div>
   `;
@@ -247,55 +272,29 @@ async function setTheme(key) {
   toast('Theme changed to ' + THEMES[key].label);
 }
 
-async function createShortcut() {
-  const result = await window.launcher.createShortcut();
-  if (result.success) toast('Desktop shortcut created!');
-  else toast('Shortcut failed: ' + (result.error || 'unknown'));
-}
-
-// ── In-app updater ────────────────────────────────────────────────────────────
-let _updateReady = false;
-
-if (window.launcher.onUpdateStatus) {
-  window.launcher.onUpdateStatus((data) => {
-    const statusEl = document.getElementById('updateStatusText');
-    const ctrlEl   = document.getElementById('updateControls');
-    if (!statusEl || !ctrlEl) return;
-
-    statusEl.textContent = data.message;
-
-    if (data.status === 'available') {
-      ctrlEl.innerHTML = `
-        <button class="btn p" onclick="downloadUpdate()">Download v${data.version}</button>
-        <button class="btn" onclick="checkForUpdate()">Re-check</button>`;
-    } else if (data.status === 'downloading') {
-      ctrlEl.innerHTML = `<div class="progress-bar" style="width:180px;"><div class="progress-fill" style="width:${data.percent||0}%"></div></div>`;
-    } else if (data.status === 'ready') {
-      _updateReady = true;
-      ctrlEl.innerHTML = `<button class="btn p" onclick="installUpdate()">Restart & install</button>`;
-    } else if (data.status === 'latest') {
-      ctrlEl.innerHTML = `<button class="btn" onclick="checkForUpdate()">Check again</button>`;
-    } else if (data.status === 'error') {
-      ctrlEl.innerHTML = `<button class="btn" onclick="checkForUpdate()">Retry</button>`;
-    }
-  });
-}
-
 async function checkForUpdate() {
-  const btn = document.getElementById('checkUpdateBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Checking...'; }
-  const result = await window.launcher.checkForUpdate();
-  if (!result.success) {
-    const statusEl = document.getElementById('updateStatusText');
-    if (statusEl) statusEl.textContent = 'Could not check for updates: ' + result.error;
-    if (btn) { btn.disabled = false; btn.textContent = 'Check for updates'; }
+  const ctrl = document.getElementById('updateControls');
+  const status = document.getElementById('updateStatusText');
+  if (ctrl) ctrl.innerHTML = '<span style="font-size:12px;color:var(--text3);">Checking...</span>';
+  if (status) status.textContent = 'Checking for updates...';
+  if (window.launcher.checkForUpdate) {
+    await window.launcher.checkForUpdate();
+  } else {
+    if (status) status.textContent = 'Launcher is up to date.';
+    if (ctrl) ctrl.innerHTML = '<button class="btn" onclick="checkForUpdate()">Check for updates</button>';
   }
 }
 
 async function downloadUpdate() {
-  await window.launcher.downloadUpdate();
+  if (window.launcher.downloadUpdate) await window.launcher.downloadUpdate();
 }
 
 async function installUpdate() {
-  await window.launcher.installUpdate();
+  if (window.launcher.installUpdate) await window.launcher.installUpdate();
+}
+
+async function createShortcut() {
+  const result = await window.launcher.createShortcut();
+  if (result.success) toast('Desktop shortcut created!');
+  else toast('Shortcut failed: ' + (result.error || 'unknown'));
 }

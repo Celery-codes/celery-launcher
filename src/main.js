@@ -2,7 +2,6 @@ const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
-const { initUpdater } = require('./updater');
 
 const store = new Store();
 const { authenticateMicrosoft, refreshToken, logout } = require('./auth/microsoft');
@@ -65,12 +64,22 @@ function createWindow() {
     },
     icon: path.join(__dirname, '../assets/icon.ico')
   });
+
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   if (isDev) mainWindow.webContents.openDevTools();
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url); return { action: 'deny' };
   });
-  initUpdater(mainWindow);
+
+  // Init updater after window is ready
+  if (!isDev) {
+    try {
+      const { initUpdater } = require('./updater');
+      initUpdater(mainWindow);
+    } catch (e) {
+      console.log('Updater not available:', e.message);
+    }
+  }
 }
 
 app.whenReady().then(() => {
@@ -85,24 +94,16 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
-// Window controls
+// ── Window controls ───────────────────────────────────────────────────────────
 ipcMain.on('window-minimize', () => mainWindow.minimize());
 ipcMain.on('window-maximize', () => { if (mainWindow.isMaximized()) mainWindow.unmaximize(); else mainWindow.maximize(); });
 ipcMain.on('window-close', () => mainWindow.close());
 
-// Auth
- ipcMain.handle('auth-microsoft', async () => {
-    try {
-      const account = await authenticateMicrosoft(mainWindow, (userCode) => {
-        // Send the user code to the renderer so it can display it
-        mainWindow.webContents.send('auth-device-code', userCode);
-      });
-      store.set('account', account);
-      return { success: true, account };
-    } catch (e) {
-      return { success: false, error: e.message };
-    }
-  });
+// ── Auth ──────────────────────────────────────────────────────────────────────
+ipcMain.handle('auth-microsoft', async () => {
+  try { const account = await authenticateMicrosoft(mainWindow); store.set('account', account); return { success: true, account }; }
+  catch (e) { return { success: false, error: e.message }; }
+});
 ipcMain.handle('auth-logout', async (_, uuid) => {
   await logout(uuid);
   store.set('accounts', store.get('accounts', []).filter(a => a.uuid !== uuid));
@@ -121,23 +122,21 @@ ipcMain.handle('auth-refresh', async (_, uuid) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
-// Instances — always use instanceId as folder name, no renaming
+// ── Instances ─────────────────────────────────────────────────────────────────
 ipcMain.handle('instances-get', () => store.get('instances', []));
 ipcMain.handle('instances-save', (_, instances) => { store.set('instances', instances); return { success: true }; });
-
 ipcMain.handle('instance-open-folder', (_, instanceId) => {
   const dir = path.join(INSTANCES_DIR, instanceId);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  shell.openPath(dir);
-  return { success: true };
+  shell.openPath(dir); return { success: true };
 });
 
-// Versions
+// ── Versions ──────────────────────────────────────────────────────────────────
 ipcMain.handle('versions-minecraft', async () => { try { return await fetchMcVersions(); } catch (e) { return { error: e.message }; } });
 ipcMain.handle('versions-fabric',    async (_, v) => { try { return await fetchFabricVersions(v); } catch (e) { return { error: e.message }; } });
 ipcMain.handle('versions-forge',     async (_, v) => { try { return await fetchForgeVersions(v); } catch (e) { return { error: e.message }; } });
 
-// Launch
+// ── Launch ────────────────────────────────────────────────────────────────────
 ipcMain.handle('launch-game', async (_, { instanceId, accountUuid }) => {
   try {
     const instances = store.get('instances', []);
@@ -151,9 +150,10 @@ ipcMain.handle('launch-game', async (_, { instanceId, accountUuid }) => {
     const settings = store.get('settings', {});
 
     mainWindow.webContents.send('launch-status', { status: 'preparing', message: 'Preparing launch...' });
-    await downloadVersion(instance, settings, p => mainWindow.webContents.send('launch-status', { status: 'downloading', ...p }));
+    await downloadVersion(instance, settings, p =>
+      mainWindow.webContents.send('launch-status', { status: 'downloading', ...p }));
 
-    // Refresh token
+    // Refresh token before launch — fixes multiplayer invalid session
     let freshAccount = account;
     try {
       freshAccount = await refreshToken(account);
@@ -205,7 +205,7 @@ ipcMain.handle('launch-game', async (_, { instanceId, accountUuid }) => {
   }
 });
 
-// Mods
+// ── Mods ──────────────────────────────────────────────────────────────────────
 ipcMain.handle('mods-search-modrinth', async (_, opts) => { try { return await searchModrinth(opts); } catch (e) { return { error: e.message }; } });
 ipcMain.handle('mods-search-curseforge', async (_, opts) => {
   try { const key = store.get('settings.curseforgeKey', ''); return await searchCurseForge({ ...opts, key }); }
@@ -213,7 +213,8 @@ ipcMain.handle('mods-search-curseforge', async (_, opts) => {
 });
 ipcMain.handle('mods-install', async (_, { instanceId, mod, source }) => {
   try {
-    const result = await installMod(instanceId, mod, source, p => mainWindow.webContents.send('mod-install-progress', { modId: mod.id, ...p }));
+    const result = await installMod(instanceId, mod, source, p =>
+      mainWindow.webContents.send('mod-install-progress', { modId: mod.id, ...p }));
     return { success: true, deps: result?.deps };
   } catch (e) { return { success: false, error: e.message }; }
 });
@@ -236,13 +237,18 @@ ipcMain.handle('mods-check-deps', async (_, instanceId) => {
   try { return await checkMissingDependencies(instanceId); } catch { return []; }
 });
 
-// Settings
-ipcMain.handle('settings-get', () => store.get('settings', { ram: 4, javaPath: '', customJvmArgs: '', closeOnLaunch: false, pvpFlags: true, autoUpdateMods: false, curseforgeKey: '' }));
+// ── Settings ──────────────────────────────────────────────────────────────────
+ipcMain.handle('settings-get', () => store.get('settings', {
+  ram: 4, javaPath: '', customJvmArgs: '', closeOnLaunch: false,
+  pvpFlags: true, autoUpdateMods: false, curseforgeKey: ''
+}));
 ipcMain.handle('settings-save', (_, s) => { store.set('settings', s); return { success: true }; });
 
-// Modpack
+// ── Modpack ───────────────────────────────────────────────────────────────────
 ipcMain.handle('modpack-import', async () => {
-  const { filePaths } = await dialog.showOpenDialog(mainWindow, { title: 'Import Modpack', filters: [{ name: 'Modpack', extensions: ['mrpack', 'zip'] }], properties: ['openFile'] });
+  const { filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Import Modpack', filters: [{ name: 'Modpack', extensions: ['mrpack', 'zip'] }], properties: ['openFile']
+  });
   if (!filePaths.length) return { cancelled: true };
   try {
     const { importModpack } = require('./launcher/modpack');
@@ -254,13 +260,14 @@ ipcMain.handle('modpack-import', async () => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
-// Loader API
+// ── Loader API ────────────────────────────────────────────────────────────────
 ipcMain.handle('loader-api-install', async (_, { instanceId }) => {
   try {
     const instance = store.get('instances', []).find(i => i.id === instanceId);
     if (!instance) throw new Error('Instance not found');
     const { installLoaderApi } = require('./launcher/loaderapis');
-    const result = await installLoaderApi(instanceId, instance, p => mainWindow.webContents.send('loader-api-progress', p));
+    const result = await installLoaderApi(instanceId, instance, p =>
+      mainWindow.webContents.send('loader-api-progress', p));
     const { syncModsWithFolder } = require('./launcher/mods');
     const mods = syncModsWithFolder(instanceId);
     const instances = store.get('instances', []);
@@ -270,7 +277,7 @@ ipcMain.handle('loader-api-install', async (_, { instanceId }) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
-// Log management
+// ── Log management ────────────────────────────────────────────────────────────
 ipcMain.handle('open-log-folder', () => { shell.openPath(LOGS_DIR); return { success: true }; });
 ipcMain.handle('clear-log-folder', () => {
   try {
@@ -292,7 +299,7 @@ ipcMain.handle('save-log-file', async (_, text) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
-// Shortcut
+// ── Shortcut ──────────────────────────────────────────────────────────────────
 ipcMain.handle('create-shortcut', async () => {
   try {
     const shortcutPath = path.join(require('os').homedir(), 'Desktop', 'Celery Launcher.lnk');
@@ -305,12 +312,15 @@ ipcMain.handle('create-shortcut', async () => {
     fs.writeFileSync(bat, `@echo off\ncd /d "${app.getAppPath()}"\nnpm start\n`);
     return { success: true };
   } catch (e) {
-    try { const bat = path.join(require('os').homedir(), 'Desktop', 'Celery Launcher.bat'); fs.writeFileSync(bat, `@echo off\ncd /d "${app.getAppPath()}"\nnpm start\n`); return { success: true }; }
-    catch (e2) { return { success: false, error: e2.message }; }
+    try {
+      const bat = path.join(require('os').homedir(), 'Desktop', 'Celery Launcher.bat');
+      fs.writeFileSync(bat, `@echo off\ncd /d "${app.getAppPath()}"\nnpm start\n`);
+      return { success: true };
+    } catch (e2) { return { success: false, error: e2.message }; }
   }
 });
 
-// Skin
+// ── Skin ──────────────────────────────────────────────────────────────────────
 const { fetchSkinHead } = require('./launcher/skin');
 ipcMain.handle('skin-get-head', async (_, { uuid, username }) => {
   try {
@@ -330,13 +340,15 @@ ipcMain.handle('skin-set-window-icon', async (_, { uuid, username }) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
-// Input dialog
+// ── Input dialog ──────────────────────────────────────────────────────────────
 ipcMain.handle('show-input-dialog', async (_, { title, label, placeholder }) => {
   const { BrowserWindow: BW } = require('electron');
   return new Promise((resolve) => {
-    const win = new BW({ width: 380, height: 180, parent: mainWindow, modal: true,
+    const win = new BW({
+      width: 380, height: 180, parent: mainWindow, modal: true,
       resizable: false, minimizable: false, maximizable: false, frame: false,
-      backgroundColor: '#131614', webPreferences: { nodeIntegration: true, contextIsolation: false } });
+      backgroundColor: '#131614', webPreferences: { nodeIntegration: true, contextIsolation: false }
+    });
     const html = `<!DOCTYPE html><html><head><style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:'Outfit',sans-serif;background:#131614;color:#e8ede9;padding:20px;user-select:none;}
@@ -366,7 +378,7 @@ function cancel(){ipcRenderer.send('input-dialog-result',null);}
   });
 });
 
-// Options profiles
+// ── Options profiles ──────────────────────────────────────────────────────────
 const optionsModule = require('./launcher/options');
 ipcMain.handle('options-list-profiles', () => optionsModule.listProfiles());
 ipcMain.handle('options-capture', (_, { instanceId, name }) => {
@@ -382,7 +394,7 @@ ipcMain.handle('options-apply', (_, { instanceId, profileId }) => {
 });
 ipcMain.handle('options-delete', (_, profileId) => optionsModule.deleteProfile(profileId));
 
-// Instance folder listing — always uses instanceId
+// ── Instance folder ops ───────────────────────────────────────────────────────
 ipcMain.handle('instance-list-folder', (_, { instanceId, folder }) => {
   try {
     const dir = path.join(INSTANCES_DIR, instanceId, folder);
@@ -395,14 +407,11 @@ ipcMain.handle('instance-list-folder', (_, { instanceId, folder }) => {
     })};
   } catch (e) { return { files: [], error: e.message }; }
 });
-
 ipcMain.handle('instance-open-subfolder', (_, { instanceId, folder }) => {
   const dir = path.join(INSTANCES_DIR, instanceId, folder);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  shell.openPath(dir);
-  return { success: true };
+  shell.openPath(dir); return { success: true };
 });
-
 ipcMain.handle('instance-delete-file', (_, { instanceId, folder, filename }) => {
   try {
     const filePath = path.join(INSTANCES_DIR, instanceId, folder, filename);
@@ -415,14 +424,13 @@ ipcMain.handle('instance-delete-file', (_, { instanceId, folder, filename }) => 
   } catch (e) { return { success: false, error: e.message }; }
 });
 
-// servers.dat
+// ── servers.dat ───────────────────────────────────────────────────────────────
 ipcMain.handle('instance-read-servers', (_, instanceId) => {
   try {
     const serversFile = path.join(INSTANCES_DIR, instanceId, 'servers.dat');
     if (!fs.existsSync(serversFile)) return { servers: [] };
     const text = fs.readFileSync(serversFile).toString('latin1');
-    const readable = [];
-    let cur = '';
+    const readable = []; let cur = '';
     for (const c of text) {
       if (c.charCodeAt(0) >= 32 && c.charCodeAt(0) < 127) cur += c;
       else { if (cur.length > 3) readable.push(cur); cur = ''; }
@@ -436,7 +444,7 @@ ipcMain.handle('instance-read-servers', (_, instanceId) => {
   } catch (e) { return { servers: [], error: e.message }; }
 });
 
-// Mod count sync
+// ── Mod count sync ────────────────────────────────────────────────────────────
 ipcMain.handle('instance-sync-mod-count', async (_, instanceId) => {
   try {
     const mods = await getInstalledMods(instanceId);
