@@ -67,4 +67,9 @@ contextBridge.exposeInMainWorld('launcher', {
 
   installLoaderApi: (opts) => ipcRenderer.invoke('loader-api-install', opts),
   onLoaderApiProgress: (cb) => ipcRenderer.on('loader-api-progress', (_, d) => cb(d)),
+
+  checkForUpdate: () => ipcRenderer.invoke('update-check'),
+  downloadUpdate: () => ipcRenderer.invoke('update-download'),
+  installUpdate:  () => ipcRenderer.invoke('update-install'),
+  onUpdateStatus: (cb) => ipcRenderer.on('update-status', (_, d) => cb(d)),
 });

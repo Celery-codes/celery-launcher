@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const Store = require('electron-store');
+const { initUpdater } = require('./updater');
 
 const store = new Store();
 const { authenticateMicrosoft, refreshToken, logout } = require('./auth/microsoft');
@@ -69,6 +70,7 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url); return { action: 'deny' };
   });
+  initUpdater(mainWindow);
 }
 
 app.whenReady().then(() => {

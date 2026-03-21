@@ -200,6 +200,19 @@ async function renderSettingsPanel() {
         <div class="s-ctrl"><button class="btn" onclick="window.launcher.openInstanceFolder('..')">Open folder</button></div>
       </div>
     </div>
+
+    <div class="s-section">
+      <div class="s-stitle">Updates</div>
+      <div class="s-row">
+        <div class="s-lbl">
+          <div class="s-lname">Celery Launcher updates</div>
+          <div class="s-ldesc" id="updateStatusText">Check for the latest version from GitHub.</div>
+        </div>
+        <div class="s-ctrl" style="display:flex;gap:8px;" id="updateControls">
+          <button class="btn" id="checkUpdateBtn" onclick="checkForUpdate()">Check for updates</button>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -238,4 +251,51 @@ async function createShortcut() {
   const result = await window.launcher.createShortcut();
   if (result.success) toast('Desktop shortcut created!');
   else toast('Shortcut failed: ' + (result.error || 'unknown'));
+}
+
+// ── In-app updater ────────────────────────────────────────────────────────────
+let _updateReady = false;
+
+if (window.launcher.onUpdateStatus) {
+  window.launcher.onUpdateStatus((data) => {
+    const statusEl = document.getElementById('updateStatusText');
+    const ctrlEl   = document.getElementById('updateControls');
+    if (!statusEl || !ctrlEl) return;
+
+    statusEl.textContent = data.message;
+
+    if (data.status === 'available') {
+      ctrlEl.innerHTML = `
+        <button class="btn p" onclick="downloadUpdate()">Download v${data.version}</button>
+        <button class="btn" onclick="checkForUpdate()">Re-check</button>`;
+    } else if (data.status === 'downloading') {
+      ctrlEl.innerHTML = `<div class="progress-bar" style="width:180px;"><div class="progress-fill" style="width:${data.percent||0}%"></div></div>`;
+    } else if (data.status === 'ready') {
+      _updateReady = true;
+      ctrlEl.innerHTML = `<button class="btn p" onclick="installUpdate()">Restart & install</button>`;
+    } else if (data.status === 'latest') {
+      ctrlEl.innerHTML = `<button class="btn" onclick="checkForUpdate()">Check again</button>`;
+    } else if (data.status === 'error') {
+      ctrlEl.innerHTML = `<button class="btn" onclick="checkForUpdate()">Retry</button>`;
+    }
+  });
+}
+
+async function checkForUpdate() {
+  const btn = document.getElementById('checkUpdateBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking...'; }
+  const result = await window.launcher.checkForUpdate();
+  if (!result.success) {
+    const statusEl = document.getElementById('updateStatusText');
+    if (statusEl) statusEl.textContent = 'Could not check for updates: ' + result.error;
+    if (btn) { btn.disabled = false; btn.textContent = 'Check for updates'; }
+  }
+}
+
+async function downloadUpdate() {
+  await window.launcher.downloadUpdate();
+}
+
+async function installUpdate() {
+  await window.launcher.installUpdate();
 }
