@@ -72,4 +72,7 @@ contextBridge.exposeInMainWorld('launcher', {
   downloadUpdate: () => ipcRenderer.invoke('update-download'),
   installUpdate:  () => ipcRenderer.invoke('update-install'),
   onUpdateStatus: (cb) => ipcRenderer.on('update-status', (_, d) => cb(d)),
+
+  onDeviceCode: (cb) => ipcRenderer.on('device-code', (_, d) => cb(d)),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
 });

@@ -24,7 +24,8 @@
         }
       ],
       "icon": "assets/icon.ico",
-      "requestedExecutionLevel": "asInvoker"
+      "requestedExecutionLevel": "asInvoker",
+      "executableName": "CeleryLauncher"
     },
     "nsis": {
       "oneClick": false,

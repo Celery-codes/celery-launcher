@@ -55,6 +55,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       openMenuId = null;
     }
   });
+
+    // Show version from package.json automatically
+  try {
+    const ver = require('../package.json').version;
+    const el = document.querySelector('.app-ver');
+    if (el) el.textContent = 'v' + ver;
+  } catch {}
 });
 
 function showPanel(name, el) {

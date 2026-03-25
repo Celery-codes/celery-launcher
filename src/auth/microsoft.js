@@ -1,4 +1,4 @@
-const { BrowserWindow, shell } = require('electron');
+const { BrowserWindow, session } = require('electron');
 const fetch = require('node-fetch');
 
 const MS_CLIENT_ID  = '000000004C12AE6F';
@@ -24,28 +24,39 @@ async function authenticateMicrosoft(parentWindow) {
 }
 
 function getMicrosoftCode(parentWindow) {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
+    // Fresh isolated session every time — no saved cookies, forces account picker
+    const partition  = 'ms-auth-' + Date.now();
+    const authSession = session.fromPartition(partition, { cache: false });
+    await authSession.clearStorageData();
+
     const params = new URLSearchParams({
       client_id:     MS_CLIENT_ID,
       response_type: 'code',
       redirect_uri:  REDIRECT_URI,
       scope:         'service::user.auth.xboxlive.com::MBI_SSL',
       display:       'touch',
-      locale:        'en'
+      locale:        'en',
+      prompt:        'select_account'   // show account picker, not email field
     });
 
     const authWindow = new BrowserWindow({
-      width: 520,
+      width:  520,
       height: 680,
       parent: parentWindow,
-      modal: true,
-      show: false,
+      modal:  true,
+      show:   false,
+      title:  'Sign in to Microsoft',
       webPreferences: {
-        nodeIntegration: false,
+        nodeIntegration:  false,
         contextIsolation: true,
-        webSecurity: false
+        webSecurity:      false,
+        partition
       }
     });
+
+    // Remove menu bar
+    authWindow.setMenuBarVisibility(false);
 
     let resolved = false;
 
@@ -54,7 +65,6 @@ function getMicrosoftCode(parentWindow) {
       try {
         if (
           url.startsWith('https://login.live.com/oauth20_desktop.srf') ||
-          url.startsWith('ms-xal-') ||
           url.includes('oauth20_desktop.srf')
         ) {
           const u     = new URL(url);
@@ -77,18 +87,26 @@ function getMicrosoftCode(parentWindow) {
 
     authWindow.webContents.on('page-title-updated', (_, title) => {
       if (resolved) return;
-      if (title && title.startsWith('Success code=')) {
+      if (title?.startsWith('Success code=')) {
         resolved = true;
         authWindow.destroy();
         resolve(title.replace('Success code=', '').trim());
       }
     });
 
-    // Prevent any links inside the auth window from opening a second browser
+    // Intercept the redirect before the page even loads
+    authSession.webRequest.onBeforeRequest(
+      { urls: ['https://login.live.com/oauth20_desktop.srf*'] },
+      (details, callback) => {
+        tryResolveUrl(details.url);
+        callback({});
+      }
+    );
+
     authWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
     authWindow.on('closed', () => {
-      if (!resolved) reject(new Error('Login window was closed before completing sign-in'));
+      if (!resolved) reject(new Error('Sign-in window was closed'));
     });
 
     authWindow.loadURL(`${MS_AUTH_URL}?${params}`);
@@ -97,16 +115,15 @@ function getMicrosoftCode(parentWindow) {
 }
 
 async function getMicrosoftTokens(code) {
-  const params = new URLSearchParams({
-    client_id:    MS_CLIENT_ID,
-    code,
-    grant_type:   'authorization_code',
-    redirect_uri: REDIRECT_URI
-  });
-  const res  = await fetch(MS_TOKEN_URL, {
+  const res = await fetch(MS_TOKEN_URL, {
     method:  'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body:    params.toString()
+    body: new URLSearchParams({
+      client_id:    MS_CLIENT_ID,
+      code,
+      grant_type:   'authorization_code',
+      redirect_uri: REDIRECT_URI
+    }).toString()
   });
   const text = await res.text();
   let data;
@@ -118,16 +135,15 @@ async function getMicrosoftTokens(code) {
 
 async function refreshToken(account) {
   if (!account.refreshToken) throw new Error('No refresh token — please log in again');
-  const params = new URLSearchParams({
-    client_id:     MS_CLIENT_ID,
-    refresh_token: account.refreshToken,
-    grant_type:    'refresh_token',
-    redirect_uri:  REDIRECT_URI
-  });
-  const res  = await fetch(MS_TOKEN_URL, {
+  const res = await fetch(MS_TOKEN_URL, {
     method:  'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body:    params.toString()
+    body: new URLSearchParams({
+      client_id:     MS_CLIENT_ID,
+      refresh_token: account.refreshToken,
+      grant_type:    'refresh_token',
+      redirect_uri:  REDIRECT_URI
+    }).toString()
   });
   const data = await res.json();
   if (data.error) throw new Error(data.error_description || data.error);
@@ -149,7 +165,7 @@ async function getMinecraftAccount(msTokens, existingAccount = null) {
   const xblData  = await xblRes.json();
   const xblToken = xblData.Token;
   const userHash = xblData.DisplayClaims?.xui?.[0]?.uhs;
-  if (!xblToken || !userHash) throw new Error('Invalid Xbox Live response — missing token or user hash');
+  if (!xblToken || !userHash) throw new Error('Invalid Xbox Live response');
 
   // XSTS
   const xstsRes = await fetch(XSTS_AUTH_URL, {
@@ -170,29 +186,30 @@ async function getMinecraftAccount(msTokens, existingAccount = null) {
     };
     throw new Error(msgs[xstsData.XErr] || `XSTS error: ${xstsData.XErr}`);
   }
-  const xstsToken = xstsData.Token;
-  if (!xstsToken) throw new Error('No XSTS token received');
+  if (!xstsData.Token) throw new Error('No XSTS token received');
 
   // MC auth
   const mcRes = await fetch(MC_AUTH_URL, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ identityToken: `XBL3.0 x=${userHash};${xstsToken}` })
+    body:    JSON.stringify({ identityToken: `XBL3.0 x=${userHash};${xstsData.Token}` })
   });
   if (!mcRes.ok) throw new Error(`Minecraft auth failed: ${mcRes.status} ${await mcRes.text()}`);
-  const mcData  = await mcRes.json();
-  const mcToken = mcData.access_token;
-  if (!mcToken) throw new Error('No Minecraft token received');
+  const mcData = await mcRes.json();
+  if (!mcData.access_token) throw new Error('No Minecraft token received');
 
   // Entitlements
-  const entRes  = await fetch(MC_ENT_URL, { headers: { Authorization: `Bearer ${mcToken}` } });
-  const entData = await entRes.json();
+  const entData = await (await fetch(MC_ENT_URL, {
+    headers: { Authorization: `Bearer ${mcData.access_token}` }
+  })).json();
   const ownsGame = (entData.items || []).some(i =>
     i.name === 'product_minecraft' || i.name === 'game_minecraft'
   );
 
   // Profile
-  const profRes = await fetch(MC_PROFILE_URL, { headers: { Authorization: `Bearer ${mcToken}` } });
+  const profRes = await fetch(MC_PROFILE_URL, {
+    headers: { Authorization: `Bearer ${mcData.access_token}` }
+  });
   if (!profRes.ok) {
     if (profRes.status === 404) throw new Error("Account doesn't own Minecraft Java Edition.");
     throw new Error(`Profile fetch failed: ${profRes.status}`);
@@ -203,7 +220,7 @@ async function getMinecraftAccount(msTokens, existingAccount = null) {
   const account = {
     uuid:         formatUuid(profData.id),
     username:     profData.name,
-    mcToken,
+    mcToken:      mcData.access_token,
     refreshToken: msTokens.refresh_token || existingAccount?.refreshToken || '',
     tokenExpiry:  Date.now() + ((msTokens.expires_in || 86400) * 1000),
     ownsGame,

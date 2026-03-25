@@ -101,8 +101,16 @@ ipcMain.on('window-close', () => mainWindow.close());
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 ipcMain.handle('auth-microsoft', async () => {
-  try { const account = await authenticateMicrosoft(mainWindow); store.set('account', account); return { success: true, account }; }
-  catch (e) { return { success: false, error: e.message }; }
+  try {
+    const account = await authenticateMicrosoft(mainWindow, (code, url) => {
+      // Send the device code to the renderer so it can display it
+      mainWindow.webContents.send('device-code', { code, url });
+    });
+    store.set('account', account);
+    return { success: true, account };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 });
 ipcMain.handle('auth-logout', async (_, uuid) => {
   await logout(uuid);
@@ -153,16 +161,29 @@ ipcMain.handle('launch-game', async (_, { instanceId, accountUuid }) => {
     await downloadVersion(instance, settings, p =>
       mainWindow.webContents.send('launch-status', { status: 'downloading', ...p }));
 
-    // Refresh token before launch — fixes multiplayer invalid session
+    // Refresh token before launch — fixes Invalid Session on multiplayer
     let freshAccount = account;
+    const tokenAge = Date.now() - (account.tokenExpiry - 86400000); // ms since token was issued
+    const isExpired = Date.now() > (account.tokenExpiry || 0);
+    const isStale   = tokenAge > 23 * 60 * 60 * 1000; // older than 23 hours
+
     try {
       freshAccount = await refreshToken(account);
       const all = store.get('accounts', []);
-      const ai = all.findIndex(a => a.uuid === freshAccount.uuid);
+      const ai  = all.findIndex(a => a.uuid === freshAccount.uuid);
       if (ai >= 0) all[ai] = freshAccount;
       store.set('accounts', all);
+      mainWindow.webContents.send('game-log', '[Celery] Session token refreshed.\n');
     } catch (e) {
       mainWindow.webContents.send('game-log', '[Celery] Token refresh failed: ' + e.message + '\n');
+      if (isExpired || isStale) {
+        // Token is too old to use — abort launch and ask user to re-login
+        mainWindow.webContents.send('launch-status', {
+          status: 'error',
+          message: 'Session expired — please re-login in the Accounts tab'
+        });
+        return { success: false, error: 'Session expired. Go to Accounts and log in again.' };
+      }
     }
 
     mainWindow.webContents.send('launch-status', { status: 'launching', message: 'Starting Minecraft...' });
@@ -453,4 +474,9 @@ ipcMain.handle('instance-sync-mod-count', async (_, instanceId) => {
     if (idx >= 0) { instances[idx].mods = mods.length; store.set('instances', instances); }
     return { success: true, count: mods.length };
   } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('open-external', (_, url) => {
+  shell.openExternal(url);
+  return { success: true };
 });
