@@ -17,7 +17,7 @@
       <div class="titlebar-left">
         <div class="logo-mark">C</div>
         <span class="app-name">Celery Launcher</span>
-        <span class="app-ver">v2.2.0</span>
+        <span class="app-ver">v0.0.0</span>
       </div>
       <div class="titlebar-drag"></div>
       <div class="win-btns">
@@ -26,7 +26,6 @@
         <div class="wb cls" onclick="window.launcher.close()"></div>
       </div>
     </div>
-
     <div class="layout">
       <div class="sidebar">
         <div class="s-sect">
@@ -71,7 +70,6 @@
           </button>
         </div>
       </div>
-
       <div class="main" id="mainContent">
         <div id="panel-instances" class="panel on"></div>
         <div id="panel-mods" class="panel"></div>
@@ -81,7 +79,6 @@
         <div id="panel-settings" class="panel"></div>
       </div>
     </div>
-
     <div class="launch-strip">
       <div class="launch-status" id="launchStatus"></div>
       <div class="sel-info">
@@ -91,10 +88,7 @@
       <button class="launch-btn" id="launchBtn" onclick="launchGame()">&#9654; Launch</button>
     </div>
   </div>
-
-  <!-- Modals -->
   <div class="modal-overlay" id="modalOverlay" onclick="closeAllModals()"></div>
-
   <div class="modal" id="newInstanceModal">
     <div class="modal-title">New Instance</div>
     <div class="mf"><div class="ml">Name</div><input class="mi" id="newName" placeholder="e.g. 1.21 Survival"></div>
@@ -122,7 +116,6 @@
       <button class="btn p" onclick="createInstance()">Create</button>
     </div>
   </div>
-
   <div class="modal" id="editInstanceModal">
     <div class="modal-title">Edit Instance</div>
     <div class="mf"><div class="ml">Name</div><input class="mi" id="editName"></div>
@@ -139,9 +132,7 @@
       <button class="btn p" onclick="saveEdit()">Save</button>
     </div>
   </div>
-
   <div class="toast" id="toast"></div>
-
   <script src="panels/instances.js"></script>
   <script src="panels/instance-detail.js"></script>
   <script src="panels/mods.js"></script>
