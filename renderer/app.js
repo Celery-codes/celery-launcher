@@ -17,10 +17,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Dynamic version from package.json
   try {
-    const ver = require('../package.json').version;
-    const el = document.querySelector('.app-ver');
-    if (el) el.textContent = 'v' + ver;
-  } catch {}
+  const ver = await window.launcher.getAppVersion();
+  const el = document.querySelector('.app-ver');
+  if (el) el.textContent = 'v' + ver;
+} catch {}
 
   await loadAccounts();
   await loadInstances();
