@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 const Store = require('electron-store');
+const { initUpdater } = require('./updater');
 
 const store = new Store();
 const { authenticateMicrosoft, refreshToken, logout } = require('./auth/microsoft');
@@ -68,6 +69,7 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   if (isDev) mainWindow.webContents.openDevTools();
   mainWindow.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+  initUpdater(mainWindow);
 }
 
 app.whenReady().then(() => {
@@ -243,6 +245,34 @@ ipcMain.handle('modpack-import', async () => {
   try {
     const { importModpack } = require('./launcher/modpack');
     const instance = await importModpack(filePaths[0], p => mainWindow.webContents.send('import-progress', p));
+    const instances = store.get('instances', []);
+    instances.push(instance);
+    store.set('instances', instances);
+    return { success: true, instance };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+// Import modpack from Modrinth slug/id (direct install from browser panel)
+ipcMain.handle('modpack-import-modrinth', async (_, { slug }) => {
+  try {
+    const { importModpackFromModrinth } = require('./launcher/modpack');
+    const instance = await importModpackFromModrinth(slug, null, (progress) => {
+      mainWindow.webContents.send('import-progress', progress);
+    });
+    const instances = store.get('instances', []);
+    instances.push(instance);
+    store.set('instances', instances);
+    return { success: true, instance };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+// Import modpack from a direct URL (.mrpack link)
+ipcMain.handle('modpack-import-url', async (_, { url }) => {
+  try {
+    const { importModpack } = require('./launcher/modpack');
+    const instance = await importModpack(url, (progress) => {
+      mainWindow.webContents.send('import-progress', progress);
+    });
     const instances = store.get('instances', []);
     instances.push(instance);
     store.set('instances', instances);

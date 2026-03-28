@@ -84,4 +84,12 @@ contextBridge.exposeInMainWorld('launcher', {
   // Misc
   createShortcut:  ()     => ipcRenderer.invoke('create-shortcut'),
   showInputDialog: (opts) => ipcRenderer.invoke('show-input-dialog', opts),
+
+  checkForUpdate:  ()  => ipcRenderer.invoke('update-check'),
+  downloadUpdate:  ()  => ipcRenderer.invoke('update-download'),
+  installUpdate:   ()  => ipcRenderer.invoke('update-install'),
+  onUpdateStatus:  (cb)=> ipcRenderer.on('update-status', (_, d) => cb(d)),
+  
+  importModpackFromModrinth: (opts) => ipcRenderer.invoke('modpack-import-modrinth', opts),
+  importModpackFromUrl:      (opts) => ipcRenderer.invoke('modpack-import-url', opts),
 });
