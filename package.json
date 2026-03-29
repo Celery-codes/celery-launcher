@@ -38,7 +38,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Celery Launcher",
       "deleteAppDataOnUninstall": false,
-      "include": "installer.nsh"
+      "include": "installer.nsh",
+      "artifactName": "Celery-Launcher-Setup-${version}.exe"
     },
     "files": [
       "src/**/*",

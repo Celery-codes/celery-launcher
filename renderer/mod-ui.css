@@ -38,3 +38,15 @@
 .dep-warning strong { color:#fbbf24; }
 .dep-warning .dep-list { margin-top:4px; padding-left:14px; }
 .dep-warning .dep-list li { margin:2px 0; }
+
+.modpack-import-box {
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:16px 18px;margin-bottom:18px;
+}
+.modpack-import-title {
+  font-size:11px;color:var(--text3);text-transform:uppercase;
+  letter-spacing:.8px;margin-bottom:12px;font-weight:500;
+}
+.modpack-import-row { display:flex;gap:0;align-items:flex-start;flex-wrap:wrap; }
+.modpack-import-col { flex:1;min-width:200px; }
+.modpack-input-label { font-size:11px;color:var(--text3);margin-bottom:6px; }

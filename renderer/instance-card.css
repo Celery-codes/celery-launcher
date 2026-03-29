@@ -1,0 +1,105 @@
+/* ── Instance card redesign ── */
+.igrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.icard {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.icard:hover { border-color: var(--border2); background: var(--bg3); transform: translateY(-1px); }
+.icard:active { transform: translateY(0); }
+.icard.sel { border-color: rgba(74,222,128,0.45); background: var(--green-dim); }
+
+/* Icon banner at top */
+.icard-icon {
+  width: 100%;
+  height: 80px;
+  background: var(--bg4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Body below icon */
+.icard-body {
+  padding: 10px 12px 10px;
+  flex: 1;
+}
+
+.icard .iname {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 24px;
+}
+
+.icard .imeta {
+  font-size: 11px;
+  color: var(--text3);
+  font-family: var(--mono);
+  margin-bottom: 2px;
+}
+
+.icard .itags {
+  display: flex;
+  gap: 4px;
+  margin-top: 7px;
+  flex-wrap: wrap;
+}
+
+/* 3-dot repositioned for new layout */
+.icard .tdot-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(0,0,0,0.35);
+  border-color: rgba(255,255,255,0.1);
+  backdrop-filter: blur(4px);
+}
+.icard .tdot-btn:hover {
+  background: rgba(0,0,0,0.6);
+}
+.icard .tdot-btn .dot { background: rgba(255,255,255,0.7); }
+
+/* ── Modpack import box ── */
+.mp-import-box {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-bottom: 18px;
+}
+.mp-import-title {
+  font-size: 11px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+.mp-import-row {
+  display: flex;
+  gap: 0;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mp-import-col { flex: 1; min-width: 200px; }
+.mp-input-label { font-size: 11px; color: var(--text3); margin-bottom: 6px; }

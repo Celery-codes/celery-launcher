@@ -1,9 +1,7 @@
-const fetch = require('node-fetch');
-const fs = require('fs');
-const path = require('path');
+const fetch  = require('node-fetch');
+const fs     = require('fs');
+const path   = require('path');
 const crypto = require('crypto');
-
-const FABRIC_META = 'https://meta.fabricmc.net/v2/versions/loader';
 
 async function downloadVersion(instance, settings, onProgress) {
   const { VERSIONS_DIR, ASSETS_DIR, LIBRARIES_DIR } = global.paths;
@@ -17,70 +15,135 @@ async function downloadVersion(instance, settings, onProgress) {
   const versionDir = path.join(VERSIONS_DIR, mcVersion);
   if (!fs.existsSync(versionDir)) fs.mkdirSync(versionDir, { recursive: true });
 
-  // Download client JAR
+  // Client JAR
   const clientJar = path.join(versionDir, `${mcVersion}.jar`);
   if (!fs.existsSync(clientJar)) {
     onProgress({ message: 'Downloading Minecraft client...', percent: 10 });
-    await downloadFile(manifest.downloads.client.url, clientJar, manifest.downloads.client.sha1, (p) => {
-      onProgress({ message: 'Downloading Minecraft client...', percent: 10 + Math.floor(p * 0.2) });
-    });
+    await downloadFile(manifest.downloads.client.url, clientJar,
+      manifest.downloads.client.sha1, p =>
+        onProgress({ message: 'Downloading Minecraft client...', percent: 10 + Math.floor(p * 20) }));
   }
 
-  // Save version JSON
+  // Version JSON
   const versionJson = path.join(versionDir, `${mcVersion}.json`);
-  if (!fs.existsSync(versionJson)) {
+  if (!fs.existsSync(versionJson))
     fs.writeFileSync(versionJson, JSON.stringify(manifest, null, 2));
-  }
 
-  // Download libraries
+  // Libraries + natives (combined — natives are downloaded as classifier jars
+  // then immediately extracted into the version's natives dir)
+  const nativesDir = path.join(versionDir, 'natives');
+  if (!fs.existsSync(nativesDir)) fs.mkdirSync(nativesDir, { recursive: true });
+
   onProgress({ message: 'Downloading libraries...', percent: 30 });
-  await downloadLibraries(manifest.libraries, LIBRARIES_DIR, (p) => {
-    onProgress({ message: 'Downloading libraries...', percent: 30 + Math.floor(p * 0.2) });
-  });
+  await downloadLibraries(manifest.libraries, LIBRARIES_DIR, nativesDir, p =>
+    onProgress({ message: 'Downloading libraries...', percent: 30 + Math.floor(p * 20) }));
 
-  // Download assets
+  // Assets
   onProgress({ message: 'Downloading assets...', percent: 50 });
-  await downloadAssets(manifest.assetIndex, ASSETS_DIR, (p) => {
-    onProgress({ message: 'Downloading assets...', percent: 50 + Math.floor(p * 0.2) });
-  });
+  await downloadAssets(manifest.assetIndex, ASSETS_DIR, p =>
+    onProgress({ message: 'Downloading assets...', percent: 50 + Math.floor(p * 20) }));
 
-  // Download Fabric if needed
+  // Loader
   if (loader === 'Fabric' && loaderVersion) {
     onProgress({ message: 'Setting up Fabric loader...', percent: 70 });
-    await downloadFabric(mcVersion, loaderVersion, VERSIONS_DIR, LIBRARIES_DIR, (p) => {
-      onProgress({ message: 'Setting up Fabric loader...', percent: 70 + Math.floor(p * 0.15) });
-    });
+    await downloadFabric(mcVersion, loaderVersion, VERSIONS_DIR, LIBRARIES_DIR, p =>
+      onProgress({ message: 'Setting up Fabric loader...', percent: 70 + Math.floor(p * 15) }));
+  } else if (loader === 'Quilt' && loaderVersion) {
+    onProgress({ message: 'Setting up Quilt loader...', percent: 70 });
+    await downloadQuilt(mcVersion, loaderVersion, VERSIONS_DIR, LIBRARIES_DIR, p =>
+      onProgress({ message: 'Setting up Quilt loader...', percent: 70 + Math.floor(p * 15) }));
   }
 
   onProgress({ message: 'Ready to launch!', percent: 100 });
 }
 
-async function downloadLibraries(libraries, librariesDir, onProgress) {
-  const toDownload = libraries.filter(lib => {
-    if (!lib.downloads?.artifact) return false;
+async function downloadLibraries(libraries, librariesDir, nativesDir, onProgress) {
+  const extract = require('extract-zip');
+  const jobs    = [];
+
+  for (const lib of libraries) {
+    // Platform rules check
     if (lib.rules) {
       const allowed = lib.rules.every(rule => {
         const os = rule.os?.name;
-        if (rule.action === 'allow') return !os || os === 'windows';
+        if (rule.action === 'allow')    return !os || os === 'windows';
         if (rule.action === 'disallow') return os && os !== 'windows';
         return true;
       });
-      if (!allowed) return false;
+      if (!allowed) continue;
     }
-    return true;
-  });
 
-  for (let i = 0; i < toDownload.length; i++) {
-    const lib = toDownload[i];
-    const artifact = lib.downloads.artifact;
-    const libPath = path.join(librariesDir, artifact.path);
-    const libDir = path.dirname(libPath);
-
-    if (!fs.existsSync(libDir)) fs.mkdirSync(libDir, { recursive: true });
-    if (!fs.existsSync(libPath)) {
-      await downloadFile(artifact.url, libPath, artifact.sha1);
+    // Main artifact
+    if (lib.downloads?.artifact?.url) {
+      jobs.push({
+        url:  lib.downloads.artifact.url,
+        sha1: lib.downloads.artifact.sha1,
+        dest: path.join(librariesDir, lib.downloads.artifact.path),
+        native: false
+      });
     }
-    onProgress(i / toDownload.length);
+
+    // Native classifier jars — download AND extract
+    // 1.16.1 and older use lib.natives[os] -> lib.downloads.classifiers[classifier]
+    if (lib.natives?.windows && lib.downloads?.classifiers) {
+      const classifierKey = lib.natives.windows.replace('${arch}', '64');
+      const cl = lib.downloads.classifiers[classifierKey]
+              || lib.downloads.classifiers['natives-windows-64']
+              || lib.downloads.classifiers['natives-windows'];
+      if (cl?.url) {
+        jobs.push({
+          url:  cl.url,
+          sha1: cl.sha1,
+          dest: path.join(librariesDir, cl.path),
+          native: true   // flag for extraction
+        });
+      }
+    }
+
+    // 1.19+ style — natives listed as artifact with natives-windows classifier in name
+    if (!lib.natives && lib.downloads?.classifiers) {
+      for (const key of ['natives-windows', 'natives-windows-64']) {
+        const cl = lib.downloads.classifiers[key];
+        if (cl?.url) {
+          jobs.push({
+            url:  cl.url,
+            sha1: cl.sha1,
+            dest: path.join(librariesDir, cl.path),
+            native: true
+          });
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i < jobs.length; i++) {
+    const { url, dest, sha1, native: isNative } = jobs[i];
+    const dir = path.dirname(dest);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    if (!fs.existsSync(dest)) {
+      try { await downloadFile(url, dest, sha1); }
+      catch (e) { console.error(`Library download failed: ${url} — ${e.message}`); }
+    }
+
+    // Extract native jars immediately after downloading
+    if (isNative && fs.existsSync(dest) && nativesDir) {
+      try {
+        await extract(dest, {
+          dir: nativesDir,
+          onEntry: (entry, zipfile) => {
+            const name = entry.fileName;
+            const keep = name.endsWith('.dll') || name.endsWith('.so') ||
+                         name.endsWith('.dylib') || name.endsWith('.jnilib');
+            if (!keep) entry.autodrain();
+          }
+        });
+      } catch (e) {
+        console.error(`Native extraction failed for ${path.basename(dest)}: ${e.message}`);
+      }
+    }
+
+    if (onProgress) onProgress(i / jobs.length);
   }
 }
 
@@ -89,25 +152,25 @@ async function downloadAssets(assetIndex, assetsDir, onProgress) {
   if (!fs.existsSync(indexDir)) fs.mkdirSync(indexDir, { recursive: true });
 
   const indexFile = path.join(indexDir, `${assetIndex.id}.json`);
-  if (!fs.existsSync(indexFile)) {
+  if (!fs.existsSync(indexFile))
     await downloadFile(assetIndex.url, indexFile, assetIndex.sha1);
-  }
 
-  const indexData = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
-  const objects = Object.values(indexData.objects);
+  const objects    = Object.values(JSON.parse(fs.readFileSync(indexFile, 'utf8')).objects);
   const objectsDir = path.join(assetsDir, 'objects');
-
   let done = 0;
-  const batch = 20;
-  for (let i = 0; i < objects.length; i += batch) {
-    const chunk = objects.slice(i, i + batch);
-    await Promise.all(chunk.map(async obj => {
-      const prefix = obj.hash.substring(0, 2);
-      const objDir = path.join(objectsDir, prefix);
+
+  for (let i = 0; i < objects.length; i += 20) {
+    await Promise.all(objects.slice(i, i + 20).map(async obj => {
+      const prefix  = obj.hash.substring(0, 2);
+      const objDir  = path.join(objectsDir, prefix);
       const objFile = path.join(objDir, obj.hash);
       if (!fs.existsSync(objFile)) {
         if (!fs.existsSync(objDir)) fs.mkdirSync(objDir, { recursive: true });
-        await downloadFile(`https://resources.download.minecraft.net/${prefix}/${obj.hash}`, objFile, obj.hash);
+        try {
+          await downloadFile(
+            `https://resources.download.minecraft.net/${prefix}/${obj.hash}`,
+            objFile, obj.hash);
+        } catch {}
       }
       done++;
     }));
@@ -116,47 +179,69 @@ async function downloadAssets(assetIndex, assetsDir, onProgress) {
 }
 
 async function downloadFabric(mcVersion, loaderVersion, versionsDir, librariesDir, onProgress) {
-  const profileUrl = `https://meta.fabricmc.net/v2/versions/loader/${mcVersion}/${loaderVersion}/profile/json`;
-  const res = await fetch(profileUrl);
+  const res = await fetch(
+    `https://meta.fabricmc.net/v2/versions/loader/${mcVersion}/${loaderVersion}/profile/json`);
   if (!res.ok) throw new Error(`Failed to fetch Fabric profile: ${res.status}`);
   const profile = await res.json();
 
-  const fabricId = `${mcVersion}-fabric-${loaderVersion}`;
+  const fabricId  = `${mcVersion}-fabric-${loaderVersion}`;
   const fabricDir = path.join(versionsDir, fabricId);
   if (!fs.existsSync(fabricDir)) fs.mkdirSync(fabricDir, { recursive: true });
   fs.writeFileSync(path.join(fabricDir, `${fabricId}.json`), JSON.stringify(profile, null, 2));
 
-  // Download Fabric libraries
-  const fabricLibs = profile.libraries || [];
-  let done = 0;
-  for (const lib of fabricLibs) {
-    if (lib.url) {
-      const parts = lib.name.split(':');
-      const group = parts[0].replace(/\./g, '/');
-      const artifact = parts[1];
-      const version = parts[2];
-      const filename = `${artifact}-${version}.jar`;
-      const relPath = `${group}/${artifact}/${version}/${filename}`;
-      const libPath = path.join(librariesDir, relPath);
-      const libDir = path.dirname(libPath);
-      if (!fs.existsSync(libDir)) fs.mkdirSync(libDir, { recursive: true });
+  const libs = profile.libraries || [];
+  let done   = 0;
+  for (const lib of libs) {
+    if (lib.url && lib.name) {
+      const [g, a, v] = lib.name.split(':');
+      const rel     = `${g.replace(/\./g,'/')}/${a}/${v}/${a}-${v}.jar`;
+      const libPath = path.join(librariesDir, rel);
       if (!fs.existsSync(libPath)) {
-        const url = `${lib.url}${relPath}`;
-        try { await downloadFile(url, libPath); } catch {}
+        if (!fs.existsSync(path.dirname(libPath)))
+          fs.mkdirSync(path.dirname(libPath), { recursive: true });
+        try { await downloadFile(`${lib.url}${rel}`, libPath); } catch {}
       }
     }
-    done++;
-    onProgress(done / fabricLibs.length);
+    onProgress(++done / libs.length);
+  }
+}
+
+async function downloadQuilt(mcVersion, loaderVersion, versionsDir, librariesDir, onProgress) {
+  const res = await fetch(
+    `https://meta.quiltmc.org/v3/versions/loader/${mcVersion}/${loaderVersion}/profile/json`);
+  if (!res.ok) throw new Error(`Failed to fetch Quilt profile: ${res.status}`);
+  const profile = await res.json();
+
+  const quiltId  = `${mcVersion}-quilt-${loaderVersion}`;
+  const quiltDir = path.join(versionsDir, quiltId);
+  if (!fs.existsSync(quiltDir)) fs.mkdirSync(quiltDir, { recursive: true });
+  fs.writeFileSync(path.join(quiltDir, `${quiltId}.json`), JSON.stringify(profile, null, 2));
+
+  const libs = profile.libraries || [];
+  let done   = 0;
+  for (const lib of libs) {
+    const baseUrl = lib.url || 'https://maven.quiltmc.org/repository/release/';
+    if (lib.name) {
+      const [g, a, v] = lib.name.split(':');
+      const rel     = `${g.replace(/\./g,'/')}/${a}/${v}/${a}-${v}.jar`;
+      const libPath = path.join(librariesDir, rel);
+      if (!fs.existsSync(libPath)) {
+        if (!fs.existsSync(path.dirname(libPath)))
+          fs.mkdirSync(path.dirname(libPath), { recursive: true });
+        try { await downloadFile(`${baseUrl}${rel}`, libPath); } catch {}
+      }
+    }
+    onProgress(++done / libs.length);
   }
 }
 
 async function downloadFile(url, dest, expectedSha1 = null, onProgress = null) {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to download ${url}: ${res.status}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
 
-  const total = parseInt(res.headers.get('content-length') || '0');
+  const total  = parseInt(res.headers.get('content-length') || '0');
   let downloaded = 0;
-  const chunks = [];
+  const chunks   = [];
 
   for await (const chunk of res.body) {
     chunks.push(chunk);
@@ -177,9 +262,8 @@ async function downloadFile(url, dest, expectedSha1 = null, onProgress = null) {
 function getInstalledVersions() {
   const { VERSIONS_DIR } = global.paths;
   if (!fs.existsSync(VERSIONS_DIR)) return [];
-  return fs.readdirSync(VERSIONS_DIR).filter(d => {
-    return fs.existsSync(path.join(VERSIONS_DIR, d, `${d}.jar`));
-  });
+  return fs.readdirSync(VERSIONS_DIR)
+    .filter(d => fs.existsSync(path.join(VERSIONS_DIR, d, `${d}.jar`)));
 }
 
 module.exports = { downloadVersion, downloadFile, getInstalledVersions };

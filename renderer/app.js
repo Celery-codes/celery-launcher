@@ -134,15 +134,31 @@ function renderInstanceGrid(list, search='', loaderFilter='all') {
   const loaderTag = l => l==='Vanilla'?'tv':(l==='Forge'||l==='NeoForge')?'tfo':'tf';
   const fmtPlaytime = s => { if(!s||s<60) return ''; const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?h+'h '+m+'m':m+'m'; };
   grid.innerHTML = filtered.map(inst => {
-    const pt = fmtPlaytime(inst.playtimeSeconds||0);
+    const loaderTag = l => l==='Vanilla'?'tv':(l==='Forge'||l==='NeoForge')?'tfo':'tf';
+    const fmtPt = s => { if(!s||s<60) return ''; const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?h+'h '+m+'m':m+'m'; };
+    const pt = fmtPt(inst.playtimeSeconds||0);
+
+    // Icon — custom image, emoji, or default gradient
+    let iconHtml;
+    if (inst.iconDataUrl) {
+      iconHtml = `<img src="${escHtml(inst.iconDataUrl)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">`;
+    } else if (inst.iconEmoji) {
+      iconHtml = `<span style="font-size:24px;">${escHtml(inst.iconEmoji)}</span>`;
+    } else {
+      // Default gradient based on loader
+      const colors = { Fabric:'#4ade80,#22c55e', Forge:'#fb923c,#ea580c', NeoForge:'#fb923c,#ea580c', Quilt:'#a78bfa,#8b5cf6', Vanilla:'#60a5fa,#3b82f6' };
+      const grad = colors[inst.loader] || colors.Vanilla;
+      iconHtml = `<div style="width:100%;height:100%;border-radius:8px;background:linear-gradient(135deg,${grad});opacity:0.7;display:flex;align-items:center;justify-content:center;font-size:18px;">⚡</div>`;
+    }
+
     return `
-    <div class="icard ${inst.id===selectedInstanceId?'sel':''}" onclick="selectInstance('${inst.id}')" id="icard-${inst.id}">
-      <div class="iicon">🎮</div>
-      <div class="iname">${escHtml(inst.name)}</div>
-      <div class="imeta">${inst.mcVersion} · ${inst.loader}${inst.mods>0?' · '+inst.mods+' mods':''}</div>
-      <div class="itags">
-        <span class="tag ${loaderTag(inst.loader)}">${inst.loader}</span>
-        ${pt?`<span class="tag tv">${pt}</span>`:''}
+    <div class="icard ${inst.id===selectedInstanceId?'sel':''}" id="icard-${inst.id}">
+      <div class="icard-icon" onclick="selectInstance('${inst.id}')">${iconHtml}</div>
+      <div class="icard-body" onclick="selectInstance('${inst.id}')">
+        <div class="iname">${escHtml(inst.name)}</div>
+        <div class="imeta">${inst.mcVersion} · ${inst.loader}${inst.mods>0?' · '+inst.mods+' mods':''}</div>
+        ${pt?`<div class="imeta" style="color:var(--text4);font-size:10px;">${pt} played</div>`:''}
+        <div class="itags"><span class="tag ${loaderTag(inst.loader)}">${inst.loader}</span></div>
       </div>
       <div class="tdot-btn" onclick="event.stopPropagation();toggleCtxMenu('${inst.id}')">
         <div class="dot"></div><div class="dot"></div><div class="dot"></div>
@@ -151,6 +167,10 @@ function renderInstanceGrid(list, search='', loaderFilter='all') {
         <div class="ctx-item" onclick="event.stopPropagation();closeMenus();openInstanceDetail('${inst.id}')">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M5 6H11M5 9H9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
           View contents
+        </div>
+        <div class="ctx-item" onclick="event.stopPropagation();closeMenus();editInstanceAppearance('${inst.id}')">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M8 5V8L10 10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+          Edit appearance
         </div>
         <div class="ctx-item" onclick="event.stopPropagation();openFolder('${inst.id}')">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7.5 5H12.5C13.33 5 14 5.67 14 6.5V12.5C14 13.33 13.33 14 12.5 14H3.5C2.67 14 2 13.33 2 12.5V4.5Z" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
@@ -412,4 +432,103 @@ function fmtNum(n) {
 }
 function escHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+//Instance Customization
+async function editInstanceAppearance(id) {
+  closeMenus();
+  const inst = instances.find(i => i.id === id);
+  if (!inst) return;
+
+  // Build a simple appearance modal
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:300;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);';
+
+  const modal = document.createElement('div');
+  modal.style.cssText = 'background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:22px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,0.6);';
+
+  const EMOJIS = ['🎮','⚔️','🌍','🔥','🏰','🌲','⛏️','🧪','🚀','🐉','🦾','🎯','🏹','🌊','❄️','⚡','🎪','🎭','🛡️','💎'];
+
+  modal.innerHTML = `
+    <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:16px;">Edit Appearance</div>
+
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;">Icon emoji</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
+      ${EMOJIS.map(e => `
+        <button onclick="selectInstanceEmoji('${id}','${e}',this)"
+          style="width:34px;height:34px;border-radius:6px;font-size:18px;cursor:pointer;
+            border:1px solid ${inst.iconEmoji===e?'var(--green)':'var(--border)'};
+            background:${inst.iconEmoji===e?'var(--green-dim)':'var(--bg3)'};
+            transition:all .15s;">${e}</button>
+      `).join('')}
+    </div>
+
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;">Or upload a custom image</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <input type="file" id="iconFileInput" accept="image/*" style="display:none"
+        onchange="loadInstanceIcon('${id}',this)">
+      <button class="btn" onclick="document.getElementById('iconFileInput').click()">
+        📁 Choose image
+      </button>
+      ${inst.iconDataUrl||inst.iconEmoji ? `<button class="btn danger" onclick="clearInstanceIcon('${id}')">✕ Remove</button>` : ''}
+    </div>
+
+    ${inst.iconDataUrl ? `<img src="${inst.iconDataUrl}" style="width:64px;height:64px;border-radius:8px;object-fit:cover;margin-bottom:14px;border:1px solid var(--border);">` : ''}
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn" onclick="this.closest('[data-overlay]').remove()">Done</button>
+    </div>
+  `;
+
+  overlay.setAttribute('data-overlay', '1');
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
+function selectInstanceEmoji(id, emoji, btn) {
+  const inst = instances.find(i => i.id === id);
+  if (!inst) return;
+  inst.iconEmoji = emoji;
+  inst.iconDataUrl = null;
+  saveInstances();
+  renderInstanceGrid(instances);
+  // Update button styles in modal
+  btn.closest('.modal-body, div')?.querySelectorAll('button[onclick*="selectInstanceEmoji"]').forEach(b => {
+    b.style.border = '1px solid var(--border)';
+    b.style.background = 'var(--bg3)';
+  });
+  btn.style.border = '1px solid var(--green)';
+  btn.style.background = 'var(--green-dim)';
+}
+
+function loadInstanceIcon(id, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async e => {
+    const inst = instances.find(i => i.id === id);
+    if (!inst) return;
+    inst.iconDataUrl = e.target.result;
+    inst.iconEmoji   = null;
+    await saveInstances();
+    renderInstanceGrid(instances);
+    // Refresh modal preview
+    const overlay = document.querySelector('[data-overlay]');
+    if (overlay) {
+      editInstanceAppearance(id);
+      overlay.remove();
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+async function clearInstanceIcon(id) {
+  const inst = instances.find(i => i.id === id);
+  if (!inst) return;
+  inst.iconDataUrl = null;
+  inst.iconEmoji   = null;
+  await saveInstances();
+  renderInstanceGrid(instances);
+  document.querySelector('[data-overlay]')?.remove();
 }
