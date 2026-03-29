@@ -15,28 +15,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (typeof applyTheme === 'function') applyTheme(s.theme || 'green');
   } catch { applyTextSize('md'); }
 
-  // Dynamic version from package.json
   try {
-  const ver = await window.launcher.getAppVersion();
-  const el = document.querySelector('.app-ver');
-  if (el) el.textContent = 'v' + ver;
-} catch {}
+    const ver = await window.launcher.getAppVersion();
+    const el = document.querySelector('.app-ver');
+    if (el) el.textContent = 'v' + ver;
+  } catch {}
 
   await loadAccounts();
   await loadInstances();
   renderInstancesPanel();
   renderAccountsPanel();
   renderSettingsPanel();
-  initConsole();
+  if (typeof initConsole === 'function') initConsole();
 
-  window.launcher.onLaunchStatus((data) => {
+  window.launcher.onLaunchStatus(data => {
     const el = document.getElementById('launchStatus');
     el.className = 'launch-status ' + (data.status==='running'?'running':data.status==='error'?'error':'');
     el.innerHTML = data.message + (data.percent!==undefined && data.percent<100
       ? `<div class="progress-bar"><div class="progress-fill" style="width:${data.percent}%"></div></div>` : '');
-    if (data.status === 'running') launchRunning = true;
-    if (data.status === 'error') { launchRunning = false; setLaunchBtnState(false); }
-    if (data.message && data.status !== 'running') appendConsoleLine('[Celery] ' + data.message, 'system');
+    if (data.status==='running') launchRunning = true;
+    if (data.status==='error') { launchRunning=false; setLaunchBtnState(false); }
+    if (data.message && data.status!=='running' && typeof appendConsoleLine==='function')
+      appendConsoleLine('[Celery] '+data.message,'system');
   });
 
   window.launcher.onGameClosed(() => {
@@ -46,15 +46,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (selectedInstanceId) syncModCount(selectedInstanceId);
   });
 
-  window.launcher.onPlaytimeUpdate && window.launcher.onPlaytimeUpdate(({ instanceId, sessionSeconds }) => {
-    const inst = instances.find(i => i.id === instanceId);
-    if (inst) {
-      inst.playtimeSeconds = (inst.playtimeSeconds || 0) + sessionSeconds;
-      saveInstances();
-    }
-  });
+  if (window.launcher.onPlaytimeUpdate) {
+    window.launcher.onPlaytimeUpdate(({ instanceId, sessionSeconds }) => {
+      const inst = instances.find(i => i.id===instanceId);
+      if (inst) { inst.playtimeSeconds=(inst.playtimeSeconds||0)+sessionSeconds; saveInstances(); }
+    });
+  }
 
-  document.addEventListener('click', (e) => {
+  document.addEventListener('click', e => {
     if (!e.target.closest('.tdot-btn') && !e.target.closest('.ctx-menu')) {
       document.querySelectorAll('.ctx-menu.open').forEach(m => m.classList.remove('open'));
       openMenuId = null;
@@ -64,20 +63,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function showPanel(name, el) {
   const detail = document.getElementById('panel-detail');
-  if (detail) { detail.style.display = 'none'; detail.classList.remove('on'); }
+  if (detail) { detail.style.display='none'; detail.classList.remove('on'); }
   ['instances','mods','modpacks','accounts','settings','console'].forEach(n => {
-    const p = document.getElementById('panel-' + n); if (p) p.style.display = '';
+    const p = document.getElementById('panel-'+n); if (p) p.style.display='';
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
   document.querySelectorAll('.nav').forEach(n => n.classList.remove('on'));
-  const target = document.getElementById('panel-' + name);
+  const target = document.getElementById('panel-'+name);
   if (target) target.classList.add('on');
   if (el) el.classList.add('on');
-  if (name === 'mods')      initModsPanel();
-  if (name === 'modpacks')  initModpacksPanel();
-  if (name === 'accounts')  renderAccountsPanel();
-  if (name === 'settings')  renderSettingsPanel();
-  if (name === 'console')   renderConsolePanel();
+  if (name==='mods')     initModsPanel();
+  if (name==='modpacks') initModpacksPanel();
+  if (name==='accounts') renderAccountsPanel();
+  if (name==='settings') renderSettingsPanel();
+  if (name==='console' && typeof renderConsolePanel==='function') renderConsolePanel();
 }
 
 async function loadInstances() { instances = await window.launcher.getInstances(); }
@@ -86,16 +85,16 @@ async function saveInstances() { await window.launcher.saveInstances(instances);
 async function syncModCount(instanceId) {
   const result = await window.launcher.syncModCount(instanceId);
   if (result.success) {
-    const inst = instances.find(i => i.id === instanceId);
-    if (inst) { inst.mods = result.count; await saveInstances(); renderInstanceGrid(instances); updateStrip(); }
+    const inst = instances.find(i => i.id===instanceId);
+    if (inst) { inst.mods=result.count; await saveInstances(); renderInstanceGrid(instances); updateStrip(); }
   }
 }
 
 async function refreshAllModCounts() {
   let changed = false;
   for (const inst of instances) {
-    const result = await window.launcher.syncModCount(inst.id);
-    if (result.success && inst.mods !== result.count) { inst.mods = result.count; changed = true; }
+    const r = await window.launcher.syncModCount(inst.id);
+    if (r.success && inst.mods!==r.count) { inst.mods=r.count; changed=true; }
   }
   if (changed) { await saveInstances(); renderInstanceGrid(instances); }
 }
@@ -126,39 +125,47 @@ function renderInstanceGrid(list, search='', loaderFilter='all') {
   if (!grid) return;
   let filtered = list;
   if (search) filtered = filtered.filter(i => i.name.toLowerCase().includes(search.toLowerCase()));
-  if (loaderFilter !== 'all') filtered = filtered.filter(i => i.loader === loaderFilter);
+  if (loaderFilter!=='all') filtered = filtered.filter(i => i.loader===loaderFilter);
+
   if (!filtered.length) {
     grid.innerHTML = `<div class="empty-state"><strong>${list.length===0?'No instances yet':'No results'}</strong>${list.length===0?'Create your first instance to get started.':'Try a different search or filter.'}</div>`;
     return;
   }
+
   const loaderTag = l => l==='Vanilla'?'tv':(l==='Forge'||l==='NeoForge')?'tfo':'tf';
-  const fmtPlaytime = s => { if(!s||s<60) return ''; const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?h+'h '+m+'m':m+'m'; };
+  const fmtPt = s => { if(!s||s<60)return''; const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?h+'h '+m+'m':m+'m'; };
+
   grid.innerHTML = filtered.map(inst => {
-    const loaderTag = l => l==='Vanilla'?'tv':(l==='Forge'||l==='NeoForge')?'tfo':'tf';
-    const fmtPt = s => { if(!s||s<60) return ''; const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?h+'h '+m+'m':m+'m'; };
     const pt = fmtPt(inst.playtimeSeconds||0);
 
-    // Icon — custom image, emoji, or default gradient
-    let iconHtml;
+    // Icon rendering — custom image fills the icon box; emoji uses small box; default gradient
+    let iconInner;
     if (inst.iconDataUrl) {
-      iconHtml = `<img src="${escHtml(inst.iconDataUrl)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">`;
+      iconInner = `<img src="${escHtml(inst.iconDataUrl)}"
+        style="width:40px;height:40px;border-radius:8px;object-fit:cover;flex-shrink:0;">`;
     } else if (inst.iconEmoji) {
-      iconHtml = `<span style="font-size:24px;">${escHtml(inst.iconEmoji)}</span>`;
+      iconInner = `<span style="font-size:22px;">${escHtml(inst.iconEmoji)}</span>`;
     } else {
-      // Default gradient based on loader
-      const colors = { Fabric:'#4ade80,#22c55e', Forge:'#fb923c,#ea580c', NeoForge:'#fb923c,#ea580c', Quilt:'#a78bfa,#8b5cf6', Vanilla:'#60a5fa,#3b82f6' };
-      const grad = colors[inst.loader] || colors.Vanilla;
-      iconHtml = `<div style="width:100%;height:100%;border-radius:8px;background:linear-gradient(135deg,${grad});opacity:0.7;display:flex;align-items:center;justify-content:center;font-size:18px;">⚡</div>`;
+      const grads = {Fabric:'#4ade80,#16a34a',Forge:'#fb923c,#c2410c',NeoForge:'#fb923c,#c2410c',Quilt:'#a78bfa,#7c3aed',Vanilla:'#60a5fa,#2563eb'};
+      const g = grads[inst.loader]||grads.Vanilla;
+      iconInner = `<div style="width:40px;height:40px;border-radius:8px;background:linear-gradient(135deg,${g});opacity:.8;display:flex;align-items:center;justify-content:center;font-size:18px;">⚡</div>`;
     }
 
     return `
-    <div class="icard ${inst.id===selectedInstanceId?'sel':''}" id="icard-${inst.id}">
-      <div class="icard-icon" onclick="selectInstance('${inst.id}')">${iconHtml}</div>
-      <div class="icard-body" onclick="selectInstance('${inst.id}')">
-        <div class="iname">${escHtml(inst.name)}</div>
-        <div class="imeta">${inst.mcVersion} · ${inst.loader}${inst.mods>0?' · '+inst.mods+' mods':''}</div>
-        ${pt?`<div class="imeta" style="color:var(--text4);font-size:10px;">${pt} played</div>`:''}
-        <div class="itags"><span class="tag ${loaderTag(inst.loader)}">${inst.loader}</span></div>
+    <div class="icard ${inst.id===selectedInstanceId?'sel':''}"
+      onclick="selectInstance('${inst.id}')"
+      id="icard-${inst.id}"
+      draggable="true"
+      ondragstart="onCardDragStart(event,'${inst.id}')"
+      ondragover="onCardDragOver(event)"
+      ondrop="onCardDrop(event,'${inst.id}')"
+      ondragend="onCardDragEnd(event)">
+      <div class="iicon">${iconInner}</div>
+      <div class="iname">${escHtml(inst.name)}</div>
+      <div class="imeta">${inst.mcVersion} · ${inst.loader}${inst.mods>0?' · '+inst.mods+' mods':''}</div>
+      <div class="itags">
+        <span class="tag ${loaderTag(inst.loader)}">${inst.loader}</span>
+        ${pt?`<span class="tag tv">${pt}</span>`:''}
       </div>
       <div class="tdot-btn" onclick="event.stopPropagation();toggleCtxMenu('${inst.id}')">
         <div class="dot"></div><div class="dot"></div><div class="dot"></div>
@@ -169,7 +176,7 @@ function renderInstanceGrid(list, search='', loaderFilter='all') {
           View contents
         </div>
         <div class="ctx-item" onclick="event.stopPropagation();closeMenus();editInstanceAppearance('${inst.id}')">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M8 5V8L10 10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M11 2L14 5L5 14H2V11L11 2Z" stroke="currentColor" stroke-width="1.2" fill="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor"/></svg>
           Edit appearance
         </div>
         <div class="ctx-item" onclick="event.stopPropagation();openFolder('${inst.id}')">
@@ -194,120 +201,235 @@ function renderInstanceGrid(list, search='', loaderFilter='all') {
   }).join('');
 }
 
+// ── Drag to reorder ───────────────────────────────────────────────────────────
+let dragSrcId = null;
+
+function onCardDragStart(e, id) {
+  dragSrcId = id;
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => document.getElementById('icard-'+id)?.classList.add('drag-ghost'), 0);
+}
+
+function onCardDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.icard').forEach(c => c.classList.remove('drag-over'));
+  e.currentTarget.classList.add('drag-over');
+}
+
+function onCardDragEnd(e) {
+  document.querySelectorAll('.icard').forEach(c => {
+    c.classList.remove('drag-ghost'); c.classList.remove('drag-over');
+  });
+  dragSrcId = null;
+}
+
+async function onCardDrop(e, targetId) {
+  e.preventDefault();
+  document.querySelectorAll('.icard').forEach(c => c.classList.remove('drag-over'));
+  if (!dragSrcId || dragSrcId===targetId) return;
+  const srcIdx = instances.findIndex(i => i.id===dragSrcId);
+  const tgtIdx = instances.findIndex(i => i.id===targetId);
+  if (srcIdx<0||tgtIdx<0) return;
+  const [moved] = instances.splice(srcIdx,1);
+  instances.splice(tgtIdx,0,moved);
+  await saveInstances();
+  renderInstanceGrid(instances, document.querySelector('#panel-instances .sbox')?.value||'');
+}
+
+// ── Edit appearance ───────────────────────────────────────────────────────────
+async function editInstanceAppearance(id) {
+  closeMenus();
+  const inst = instances.find(i => i.id===id);
+  if (!inst) return;
+
+  const EMOJIS = ['🎮','⚔️','🌍','🔥','🏰','🌲','⛏️','🧪','🚀','🐉','🦾','🎯','🏹','🌊','❄️','⚡','🎪','🛡️','💎','🦅'];
+
+  const overlay = document.createElement('div');
+  overlay.setAttribute('data-appearance-overlay','1');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:400;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);';
+
+  const modal = document.createElement('div');
+  modal.style.cssText='background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:22px;width:360px;max-width:90vw;box-shadow:0 24px 64px rgba(0,0,0,0.6);';
+  modal.innerHTML = `
+    <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:16px;">Edit Appearance — ${escHtml(inst.name)}</div>
+
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;">Choose an emoji icon</div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:16px;" id="emojiPicker">
+      ${EMOJIS.map(e=>`
+        <button onclick="pickEmoji('${id}','${e}',this)"
+          style="width:36px;height:36px;border-radius:7px;font-size:18px;cursor:pointer;
+            border:1px solid ${inst.iconEmoji===e?'var(--green)':'var(--border)'};
+            background:${inst.iconEmoji===e?'var(--green-dim)':'var(--bg3)'};
+            transition:all .12s;">${e}</button>
+      `).join('')}
+    </div>
+
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;">Or upload a custom image</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;">
+      <input type="file" id="iconUpload_${id}" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none"
+        onchange="uploadInstanceIcon('${id}',this)">
+      <button class="btn" onclick="document.getElementById('iconUpload_${id}').click()">📁 Choose image</button>
+      ${inst.iconDataUrl||inst.iconEmoji?`<button class="btn danger" onclick="clearIcon('${id}')">✕ Remove icon</button>`:''}
+    </div>
+    ${inst.iconDataUrl?`<img src="${inst.iconDataUrl}" style="width:48px;height:48px;border-radius:8px;object-fit:cover;margin-bottom:12px;border:1px solid var(--border);">`: ''}
+
+    <div style="display:flex;justify-content:flex-end;margin-top:4px;">
+      <button class="btn p" onclick="document.querySelector('[data-appearance-overlay]').remove()">Done</button>
+    </div>
+  `;
+
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
+async function pickEmoji(id, emoji, btn) {
+  const inst = instances.find(i=>i.id===id);
+  if (!inst) return;
+  inst.iconEmoji=emoji; inst.iconDataUrl=null;
+  await saveInstances();
+  renderInstanceGrid(instances);
+  // Update picker highlight
+  document.querySelectorAll('#emojiPicker button').forEach(b => {
+    b.style.border='1px solid var(--border)'; b.style.background='var(--bg3)';
+  });
+  btn.style.border='1px solid var(--green)'; btn.style.background='var(--green-dim)';
+}
+
+async function uploadInstanceIcon(id, input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async e => {
+    const inst = instances.find(i=>i.id===id); if (!inst) return;
+    inst.iconDataUrl=e.target.result; inst.iconEmoji=null;
+    await saveInstances();
+    renderInstanceGrid(instances);
+    // Refresh the modal
+    document.querySelector('[data-appearance-overlay]')?.remove();
+    editInstanceAppearance(id);
+  };
+  reader.readAsDataURL(file);
+}
+
+async function clearIcon(id) {
+  const inst = instances.find(i=>i.id===id); if (!inst) return;
+  inst.iconDataUrl=null; inst.iconEmoji=null;
+  await saveInstances();
+  renderInstanceGrid(instances);
+  document.querySelector('[data-appearance-overlay]')?.remove();
+  editInstanceAppearance(id);
+}
+
 function filterInstances(search, loaderFilter) {
-  if (loaderFilter===undefined) loaderFilter = document.querySelector('#panel-instances .fsel')?.value||'all';
+  if (loaderFilter===undefined) loaderFilter=document.querySelector('#panel-instances .fsel')?.value||'all';
   renderInstanceGrid(instances, search, loaderFilter);
 }
 
 function selectInstance(id) {
-  selectedInstanceId = id;
+  selectedInstanceId=id;
   renderInstanceGrid(instances, document.querySelector('#panel-instances .sbox')?.value||'');
   updateStrip();
 }
 
 function updateStrip() {
-  const inst = instances.find(i => i.id===selectedInstanceId);
+  const inst = instances.find(i=>i.id===selectedInstanceId);
   if (inst) {
-    document.getElementById('stripName').textContent = inst.name + ' — ' + inst.loader;
-    document.getElementById('stripDetail').textContent = inst.mcVersion
-      + (inst.loaderVersion?' · '+inst.loader+' '+inst.loaderVersion:'')
-      + (inst.mods>0?' · '+inst.mods+' mods':'');
+    document.getElementById('stripName').textContent=inst.name+' — '+inst.loader;
+    document.getElementById('stripDetail').textContent=inst.mcVersion
+      +(inst.loaderVersion?' · '+inst.loader+' '+inst.loaderVersion:'')
+      +(inst.mods>0?' · '+inst.mods+' mods':'');
   } else {
-    document.getElementById('stripName').textContent = 'No instance selected';
-    document.getElementById('stripDetail').textContent = 'Create or select an instance above';
+    document.getElementById('stripName').textContent='No instance selected';
+    document.getElementById('stripDetail').textContent='Create or select an instance above';
   }
 }
 
 function toggleCtxMenu(id) {
-  const menu = document.getElementById('ctx-'+id);
-  if (!menu) return;
-  if (openMenuId && openMenuId!==id) {
-    const old = document.getElementById('ctx-'+openMenuId); if (old) old.classList.remove('open');
-  }
+  const menu=document.getElementById('ctx-'+id); if (!menu) return;
+  if (openMenuId&&openMenuId!==id) { document.getElementById('ctx-'+openMenuId)?.classList.remove('open'); }
   menu.classList.toggle('open');
-  openMenuId = menu.classList.contains('open') ? id : null;
+  openMenuId=menu.classList.contains('open')?id:null;
 }
 
 async function openFolder(id) { closeMenus(); await window.launcher.openInstanceFolder(id); }
 
 async function removeInstance(id) {
-  instances = instances.filter(i => i.id!==id);
+  instances=instances.filter(i=>i.id!==id);
   if (selectedInstanceId===id) { selectedInstanceId=null; updateStrip(); }
   await saveInstances(); renderInstanceGrid(instances); toast('Instance removed');
 }
 
 async function updateInstanceMods(id) {
-  const inst = instances.find(i => i.id===id);
+  const inst=instances.find(i=>i.id===id);
   toast('Checking for updates on '+(inst?.name||id)+'...');
-  const result = await window.launcher.updateAllMods(id);
+  const result=await window.launcher.updateAllMods(id);
   if (result.success) {
-    const updated = (result.results||[]).filter(r=>r.status==='updated').length;
+    const updated=(result.results||[]).filter(r=>r.status==='updated').length;
     toast(updated>0?'Updated '+updated+' mod(s)':'All mods are up to date');
     await syncModCount(id);
   } else toast('Update failed: '+result.error);
 }
 
 function closeMenus() {
-  document.querySelectorAll('.ctx-menu.open').forEach(m => m.classList.remove('open'));
-  openMenuId = null;
+  document.querySelectorAll('.ctx-menu.open').forEach(m=>m.classList.remove('open'));
+  openMenuId=null;
 }
 
-// ── New instance modal ────────────────────────────────────────────────────────
 async function openNewModal() {
-  document.getElementById('newName').value = '';
+  document.getElementById('newName').value='';
   showModal('newInstanceModal');
-  if (!mcVersionData) mcVersionData = await window.launcher.getMcVersions();
+  if (!mcVersionData) mcVersionData=await window.launcher.getMcVersions();
   populateVersionSelect('newMcVer', mcVersionData.releases);
-  document.getElementById('snapshotRow').style.display = 'block';
-  if (!fabricData) fabricData = await window.launcher.getFabricVersions();
+  document.getElementById('snapshotRow').style.display='block';
+  if (!fabricData) fabricData=await window.launcher.getFabricVersions();
   populateLoaderVersionSelect('newLoaderVer', fabricData.loaders);
 }
 
 function populateVersionSelect(selectId, releases) {
-  const sel = document.getElementById(selectId); if (!sel) return;
-  sel.innerHTML = releases.map((v,i) => `<option value="${v.id}">${v.id}${i===0?' (latest)':''}</option>`).join('');
+  const sel=document.getElementById(selectId); if (!sel) return;
+  sel.innerHTML=releases.map((v,i)=>`<option value="${v.id}">${v.id}${i===0?' (latest)':''}</option>`).join('');
 }
+
 function populateLoaderVersionSelect(selectId, loaders) {
-  const sel = document.getElementById(selectId); if (!sel) return;
-  sel.innerHTML = loaders.map((l,i) => `<option value="${l.version}">${l.version}${!l.stable?' (unstable)':''}${i===0?' (latest)':''}</option>`).join('');
+  const sel=document.getElementById(selectId); if (!sel) return;
+  sel.innerHTML=loaders.map((l,i)=>`<option value="${l.version}">${l.version}${!l.stable?' (unstable)':''}${i===0?' (latest)':''}</option>`).join('');
 }
+
 function toggleSnapshots() {
   if (!mcVersionData) return;
-  const show = document.getElementById('showSnapshots').checked;
-  const sel  = document.getElementById('newMcVer');
-  sel.innerHTML = mcVersionData.releases.map((v,i) => `<option value="${v.id}">${v.id}${i===0?' (latest)':''}</option>`).join('')
-    + (show ? mcVersionData.snapshots.map(v => `<option value="${v.id}">${v.id} (snapshot)</option>`).join('') : '');
+  const show=document.getElementById('showSnapshots').checked;
+  document.getElementById('newMcVer').innerHTML=
+    mcVersionData.releases.map((v,i)=>`<option value="${v.id}">${v.id}${i===0?' (latest)':''}</option>`).join('')
+    +(show?mcVersionData.snapshots.map(v=>`<option value="${v.id}">${v.id} (snapshot)</option>`).join(''):'');
 }
 
 async function onLoaderChange() {
-  const loader = document.getElementById('newLoader').value;
-  const field  = document.getElementById('loaderVerField');
-  const label  = document.getElementById('loaderVerLabel');
+  const loader=document.getElementById('newLoader').value;
+  const field=document.getElementById('loaderVerField');
+  const label=document.getElementById('loaderVerLabel');
   if (loader==='Vanilla') { field.style.display='none'; return; }
-  field.style.display = 'block'; label.textContent = loader+' Loader Version';
+  field.style.display='block'; label.textContent=loader+' Loader Version';
   if (loader==='Fabric') {
-    if (!fabricData) fabricData = await window.launcher.getFabricVersions();
+    if (!fabricData) fabricData=await window.launcher.getFabricVersions();
     populateLoaderVersionSelect('newLoaderVer', fabricData.loaders);
   } else if (loader==='Forge') {
-    const mcVer = document.getElementById('newMcVer').value;
-    const data  = await window.launcher.getForgeVersions(mcVer);
-    document.getElementById('newLoaderVer').innerHTML = (data.versions||[]).map((v,i) =>
-      `<option value="${v}">${v}${i===0?' (latest)':''}</option>`).join('')||'<option value="latest">Latest</option>';
+    const mcVer=document.getElementById('newMcVer').value;
+    const data=await window.launcher.getForgeVersions(mcVer);
+    document.getElementById('newLoaderVer').innerHTML=(data.versions||[]).map((v,i)=>`<option value="${v}">${v}${i===0?' (latest)':''}</option>`).join('')||'<option value="latest">Latest</option>';
   } else {
-    document.getElementById('newLoaderVer').innerHTML = '<option value="latest">Latest</option>';
+    document.getElementById('newLoaderVer').innerHTML='<option value="latest">Latest</option>';
   }
 }
 
 async function createInstance() {
-  const name = document.getElementById('newName').value.trim();
+  const name=document.getElementById('newName').value.trim();
   if (!name) { document.getElementById('newName').focus(); return; }
-  const mcVersion    = document.getElementById('newMcVer').value;
-  const loader       = document.getElementById('newLoader').value;
-  const loaderVersion= loader!=='Vanilla' ? document.getElementById('newLoaderVer').value : '';
-  const instance = {
-    id: Date.now().toString(36)+Math.random().toString(36).substr(2),
-    name, mcVersion, loader, loaderVersion, mods: 0, createdAt: new Date().toISOString()
-  };
+  const mcVersion=document.getElementById('newMcVer').value;
+  const loader=document.getElementById('newLoader').value;
+  const loaderVersion=loader!=='Vanilla'?document.getElementById('newLoaderVer').value:'';
+  const instance={ id:Date.now().toString(36)+Math.random().toString(36).substr(2),
+    name,mcVersion,loader,loaderVersion,mods:0,createdAt:new Date().toISOString() };
   instances.push(instance);
   await saveInstances();
   closeAllModals();
@@ -315,40 +437,40 @@ async function createInstance() {
   selectInstance(instance.id);
   toast(`Instance "${name}" created`);
   if (loader!=='Vanilla'&&loader!=='Forge'&&loader!=='NeoForge') {
-    window.launcher.onLoaderApiProgress(p => { document.getElementById('launchStatus').textContent = p.message||''; });
-    const apiResult = await window.launcher.installLoaderApi({ instanceId: instance.id });
-    if (apiResult.success && !apiResult.skipped) {
+    window.launcher.onLoaderApiProgress(p=>{ document.getElementById('launchStatus').textContent=p.message||''; });
+    const apiResult=await window.launcher.installLoaderApi({instanceId:instance.id});
+    if (apiResult.success&&!apiResult.skipped) {
       toast(loader+' API installed automatically');
       await syncModCount(instance.id);
       renderInstanceGrid(instances);
     }
-    document.getElementById('launchStatus').textContent = '';
+    document.getElementById('launchStatus').textContent='';
   }
 }
 
 async function openEditModal(id) {
-  closeMenus(); editingInstanceId = id;
-  const inst = instances.find(i => i.id===id); if (!inst) return;
-  document.getElementById('editName').value = inst.name;
-  if (!mcVersionData) mcVersionData = await window.launcher.getMcVersions();
+  closeMenus(); editingInstanceId=id;
+  const inst=instances.find(i=>i.id===id); if (!inst) return;
+  document.getElementById('editName').value=inst.name;
+  if (!mcVersionData) mcVersionData=await window.launcher.getMcVersions();
   populateVersionSelect('editMcVer', mcVersionData.releases);
-  document.getElementById('editMcVer').value = inst.mcVersion;
-  document.getElementById('editLoader').value = inst.loader;
+  document.getElementById('editMcVer').value=inst.mcVersion;
+  document.getElementById('editLoader').value=inst.loader;
   showModal('editInstanceModal');
 }
 
 async function saveEdit() {
-  const inst = instances.find(i => i.id===editingInstanceId); if (!inst) return;
-  inst.name      = document.getElementById('editName').value.trim()||inst.name;
-  inst.mcVersion = document.getElementById('editMcVer').value;
-  inst.loader    = document.getElementById('editLoader').value;
+  const inst=instances.find(i=>i.id===editingInstanceId); if (!inst) return;
+  inst.name=document.getElementById('editName').value.trim()||inst.name;
+  inst.mcVersion=document.getElementById('editMcVer').value;
+  inst.loader=document.getElementById('editLoader').value;
   await saveInstances(); closeAllModals(); renderInstancesPanel();
   if (selectedInstanceId===editingInstanceId) updateStrip();
   toast('Instance updated');
 }
 
 async function triggerImport() {
-  const result = await window.launcher.importModpack();
+  const result=await window.launcher.importModpack();
   if (result.cancelled) return;
   if (result.success) {
     instances.push(result.instance); await saveInstances(); renderInstancesPanel();
@@ -356,179 +478,48 @@ async function triggerImport() {
   } else toast('Import failed: '+result.error);
 }
 
-// ── Launch ────────────────────────────────────────────────────────────────────
 async function launchGame() {
   if (launchRunning) return;
   if (!selectedInstanceId) { toast('Select an instance first'); return; }
   if (!activeAccountUuid) { toast('Please log in first'); showPanel('accounts',document.getElementById('nav-accounts')); return; }
-  const inst = instances.find(i => i.id===selectedInstanceId);
-  appendConsoleLine('[Celery] Launching '+(inst?inst.name+' ('+inst.mcVersion+' '+inst.loader+')':''), 'system');
-  launchRunning = true; setLaunchBtnState(true);
-  const result = await window.launcher.launch({ instanceId: selectedInstanceId, accountUuid: activeAccountUuid });
-  if (!result.success) {
-    launchRunning = false; setLaunchBtnState(false);
-    appendConsoleLine('[Celery] Launch failed: '+result.error, 'system');
-    toast('Launch failed: '+result.error);
-  } else {
-    openConsolePanel();
-  }
+  launchRunning=true; setLaunchBtnState(true);
+  const result=await window.launcher.launch({instanceId:selectedInstanceId,accountUuid:activeAccountUuid});
+  if (!result.success) { launchRunning=false; setLaunchBtnState(false); toast('Launch failed: '+result.error); }
+  else if (typeof openConsolePanel==='function') openConsolePanel();
 }
 
 function setLaunchBtnState(running) {
-  const btn = document.getElementById('launchBtn'); if (!btn) return;
-  btn.disabled    = running;
-  btn.textContent = running ? '⏳ Running...' : '▶ Launch';
+  const btn=document.getElementById('launchBtn'); if (!btn) return;
+  btn.disabled=running; btn.textContent=running?'⏳ Running...':'▶ Launch';
 }
 
-// ── Accounts ──────────────────────────────────────────────────────────────────
 async function loadAccounts() {
-  const accounts = await window.launcher.getAccounts();
-  const settings = await window.launcher.getSettings();
-  activeAccountUuid = settings.activeAccount||accounts[0]?.uuid||null;
-  const activeAcc   = accounts.find(a => a.uuid===activeAccountUuid);
+  const accounts=await window.launcher.getAccounts();
+  const settings=await window.launcher.getSettings();
+  activeAccountUuid=settings.activeAccount||accounts[0]?.uuid||null;
+  const activeAcc=accounts.find(a=>a.uuid===activeAccountUuid);
   updateSidebarAccount(activeAcc);
-  if (activeAcc && typeof initSkinForAccount==='function') initSkinForAccount(activeAcc).catch(()=>{});
+  if (activeAcc&&typeof initSkinForAccount==='function') initSkinForAccount(activeAcc).catch(()=>{});
 }
 
 function updateSidebarAccount(account) {
-  const av   = document.getElementById('sidebarAvatar');
-  const name = document.getElementById('sidebarUsername');
-  const type = document.getElementById('sidebarAccountType');
+  const av=document.getElementById('sidebarAvatar');
+  const name=document.getElementById('sidebarUsername');
+  const type=document.getElementById('sidebarAccountType');
   if (account) {
-    if (!av.querySelector('img')) av.textContent = account.username.substring(0,2).toUpperCase();
-    name.textContent = account.username;
-    type.textContent = 'Microsoft · Java Edition';
-  } else {
-    av.innerHTML     = '?';
-    name.textContent = 'Not logged in';
-    type.textContent = 'Click to add account';
-  }
+    if (!av.querySelector('img')) av.textContent=account.username.substring(0,2).toUpperCase();
+    name.textContent=account.username; type.textContent='Microsoft · Java Edition';
+  } else { av.innerHTML='?'; name.textContent='Not logged in'; type.textContent='Click to add account'; }
 }
 
-// ── Modals ────────────────────────────────────────────────────────────────────
-function showModal(id) {
-  document.getElementById('modalOverlay').classList.add('open');
-  document.getElementById(id).classList.add('open');
-}
-function closeAllModals() {
-  document.getElementById('modalOverlay').classList.remove('open');
-  document.querySelectorAll('.modal').forEach(m => m.classList.remove('open'));
-}
+function showModal(id) { document.getElementById('modalOverlay').classList.add('open'); document.getElementById(id).classList.add('open'); }
+function closeAllModals() { document.getElementById('modalOverlay').classList.remove('open'); document.querySelectorAll('.modal').forEach(m=>m.classList.remove('open')); }
 
-// ── Toast ─────────────────────────────────────────────────────────────────────
 function toast(msg) {
-  const el = document.getElementById('toast');
-  el.textContent = msg; el.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),2500);
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function fmtNum(n) {
-  if (!n) return '0';
-  if (n>=1000000) return (n/1000000).toFixed(1)+'M';
-  if (n>=1000)    return (n/1000).toFixed(1)+'K';
-  return String(n);
-}
-function escHtml(str) {
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-}
-
-//Instance Customization
-async function editInstanceAppearance(id) {
-  closeMenus();
-  const inst = instances.find(i => i.id === id);
-  if (!inst) return;
-
-  // Build a simple appearance modal
-  const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:300;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);';
-
-  const modal = document.createElement('div');
-  modal.style.cssText = 'background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:22px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,0.6);';
-
-  const EMOJIS = ['🎮','⚔️','🌍','🔥','🏰','🌲','⛏️','🧪','🚀','🐉','🦾','🎯','🏹','🌊','❄️','⚡','🎪','🎭','🛡️','💎'];
-
-  modal.innerHTML = `
-    <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:16px;">Edit Appearance</div>
-
-    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;">Icon emoji</div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
-      ${EMOJIS.map(e => `
-        <button onclick="selectInstanceEmoji('${id}','${e}',this)"
-          style="width:34px;height:34px;border-radius:6px;font-size:18px;cursor:pointer;
-            border:1px solid ${inst.iconEmoji===e?'var(--green)':'var(--border)'};
-            background:${inst.iconEmoji===e?'var(--green-dim)':'var(--bg3)'};
-            transition:all .15s;">${e}</button>
-      `).join('')}
-    </div>
-
-    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;">Or upload a custom image</div>
-    <div style="display:flex;gap:8px;margin-bottom:14px;">
-      <input type="file" id="iconFileInput" accept="image/*" style="display:none"
-        onchange="loadInstanceIcon('${id}',this)">
-      <button class="btn" onclick="document.getElementById('iconFileInput').click()">
-        📁 Choose image
-      </button>
-      ${inst.iconDataUrl||inst.iconEmoji ? `<button class="btn danger" onclick="clearInstanceIcon('${id}')">✕ Remove</button>` : ''}
-    </div>
-
-    ${inst.iconDataUrl ? `<img src="${inst.iconDataUrl}" style="width:64px;height:64px;border-radius:8px;object-fit:cover;margin-bottom:14px;border:1px solid var(--border);">` : ''}
-
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button class="btn" onclick="this.closest('[data-overlay]').remove()">Done</button>
-    </div>
-  `;
-
-  overlay.setAttribute('data-overlay', '1');
-  overlay.appendChild(modal);
-  overlay.addEventListener('click', e => { if(e.target===overlay) overlay.remove(); });
-  document.body.appendChild(overlay);
-}
-
-function selectInstanceEmoji(id, emoji, btn) {
-  const inst = instances.find(i => i.id === id);
-  if (!inst) return;
-  inst.iconEmoji = emoji;
-  inst.iconDataUrl = null;
-  saveInstances();
-  renderInstanceGrid(instances);
-  // Update button styles in modal
-  btn.closest('.modal-body, div')?.querySelectorAll('button[onclick*="selectInstanceEmoji"]').forEach(b => {
-    b.style.border = '1px solid var(--border)';
-    b.style.background = 'var(--bg3)';
-  });
-  btn.style.border = '1px solid var(--green)';
-  btn.style.background = 'var(--green-dim)';
-}
-
-function loadInstanceIcon(id, input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async e => {
-    const inst = instances.find(i => i.id === id);
-    if (!inst) return;
-    inst.iconDataUrl = e.target.result;
-    inst.iconEmoji   = null;
-    await saveInstances();
-    renderInstanceGrid(instances);
-    // Refresh modal preview
-    const overlay = document.querySelector('[data-overlay]');
-    if (overlay) {
-      editInstanceAppearance(id);
-      overlay.remove();
-    }
-  };
-  reader.readAsDataURL(file);
-}
-
-async function clearInstanceIcon(id) {
-  const inst = instances.find(i => i.id === id);
-  if (!inst) return;
-  inst.iconDataUrl = null;
-  inst.iconEmoji   = null;
-  await saveInstances();
-  renderInstanceGrid(instances);
-  document.querySelector('[data-overlay]')?.remove();
-}
+function fmtNum(n) { if(!n)return'0'; if(n>=1000000)return(n/1000000).toFixed(1)+'M'; if(n>=1000)return(n/1000).toFixed(1)+'K'; return String(n); }
+function escHtml(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }

@@ -1,0 +1,5 @@
+/* Drag reorder */
+.icard[draggable] { cursor: grab; }
+.icard[draggable]:active { cursor: grabbing; }
+.icard.drag-ghost { opacity: 0.35; transform: scale(0.97); }
+.icard.drag-over  { border-color: var(--green) !important; background: var(--green-dim) !important; }

@@ -1,0 +1,41 @@
+/* Restore original card sizing */
+.igrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+  gap: 10px;
+}
+.icard {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  position: relative;
+  overflow: visible;
+}
+.icard:hover { border-color:var(--border2); background:var(--bg3); transform:translateY(-1px); }
+.icard:active { transform:translateY(0); }
+.icard.sel { border-color:rgba(74,222,128,0.45); background:var(--green-dim); }
+.icard .iicon {
+  width: 40px; height: 40px; border-radius: 8px;
+  background: var(--bg4); margin-bottom: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; border: 1px solid var(--border); overflow: hidden;
+}
+.icard .iname {
+  font-size: 13px; font-weight: 500; color: var(--text);
+  margin-bottom: 3px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; padding-right: 28px;
+}
+.icard .imeta { font-size: 11px; color: var(--text3); font-family: var(--mono); }
+.icard .itags { display:flex; gap:4px; margin-top:8px; flex-wrap:wrap; }
+
+/* Mod status badges — Enabled/Disabled not On/Off */
+.mod-status-badge { font-size:0.65em; font-weight:600; padding:2px 7px; border-radius:10px; letter-spacing:.3px; white-space:nowrap; }
+.mod-enabled { background:rgba(74,222,128,0.12); color:var(--green); border:1px solid rgba(74,222,128,0.25); }
+.mod-dis     { background:rgba(248,113,113,0.1); color:#f87171;     border:1px solid rgba(248,113,113,0.2); }
+
+/* Context menu z-index fix */
+.ctx-menu { z-index: 500; }
+.icard:has(.ctx-menu.open) { z-index: 100; }

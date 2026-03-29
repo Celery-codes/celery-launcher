@@ -1,0 +1,22 @@
+/* Fix context menu being clipped by icard overflow */
+.igrid { overflow: visible; }
+.icard { overflow: visible; }
+.ctx-menu {
+  display: none;
+  position: absolute;
+  top: 36px;
+  right: 0;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 4px;
+  z-index: 500;
+  min-width: 172px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  /* Ensure it always renders on top of other cards */
+  isolation: isolate;
+}
+.ctx-menu.open { display: block; }
+
+/* Make sure selected/hovered card sits above others so menu isn't clipped */
+.icard:has(.ctx-menu.open) { z-index: 100; }

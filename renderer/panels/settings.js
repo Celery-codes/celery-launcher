@@ -15,9 +15,7 @@ function applyTextSize(size) {
 function applyTheme(themeKey) {
   const theme = THEMES[themeKey] || THEMES.green;
   const root  = document.documentElement;
-  for (const [k,v] of Object.entries(theme)) {
-    if (k.startsWith('--')) root.style.setProperty(k, v);
-  }
+  for (const [k,v] of Object.entries(theme)) if (k.startsWith('--')) root.style.setProperty(k,v);
   root.style.setProperty('--green',      theme['--accent']);
   root.style.setProperty('--green2',     theme['--accent2']);
   root.style.setProperty('--green3',     theme['--accent3']);
@@ -26,7 +24,7 @@ function applyTheme(themeKey) {
   root.style.setProperty('--green-dim2', theme['--accent-dim2']);
   root.style.setProperty('--green-dim3', theme['--accent-dim3']);
   root.style.setProperty('--launch-text',theme['--launch-btn-text']||'#000');
-  document.querySelectorAll('.launch-btn').forEach(b => b.style.color = theme['--launch-btn-text']||'#000');
+  document.querySelectorAll('.launch-btn').forEach(b=>b.style.color=theme['--launch-btn-text']||'#000');
 }
 
 let currentSettings = {};
@@ -40,6 +38,10 @@ async function renderSettingsPanel() {
   const cfKey    = currentSettings.curseforgeKey || '';
   const textSize = currentSettings.textSize || 'md';
   const theme    = currentSettings.theme || 'green';
+
+  // Fetch available Java installations
+  let javaOptions = [{ label:'Auto-detect', value:'' }];
+  try { javaOptions = await window.launcher.findAllJava(); } catch {}
 
   panel.innerHTML = `
     <div class="ph"><div class="pt">Settings</div><div class="ps">Performance, appearance, and launcher preferences</div></div>
@@ -60,7 +62,7 @@ async function renderSettingsPanel() {
         </div>
       </div>
       <div class="s-row">
-        <div class="s-lbl"><div class="s-lname">PvP / Performance JVM flags</div><div class="s-ldesc">Aikars G1GC + extra tuning — minimises GC pauses, improves FPS stability</div></div>
+        <div class="s-lbl"><div class="s-lname">PvP / Performance JVM flags</div><div class="s-ldesc">Aikars G1GC + extra tuning — minimises GC pauses, improves FPS</div></div>
         <div class="s-ctrl"><div class="toggle ${currentSettings.pvpFlags!==false?'on':''}" onclick="toggleSetting(this,'pvpFlags')"></div></div>
       </div>
       <div class="s-row">
@@ -76,8 +78,20 @@ async function renderSettingsPanel() {
     <div class="s-section">
       <div class="s-stitle">Java</div>
       <div class="s-row">
-        <div class="s-lbl"><div class="s-lname">Java path</div><div class="s-ldesc">${escHtml(javaPath)||'Auto-detect (JAVA_HOME and common install paths)'}</div></div>
-        <div class="s-ctrl"><input class="sinput" id="javaPathInput" value="${escHtml(javaPath)}" placeholder="Auto" style="width:160px" onchange="saveSetting('javaPath',this.value)"></div>
+        <div class="s-lbl"><div class="s-lname">Java installation</div><div class="s-ldesc">Select a Java version or choose auto-detect</div></div>
+        <div class="s-ctrl" style="display:flex;gap:8px;flex-wrap:wrap;">
+          <select class="fsel" id="javaDropdown" onchange="onJavaDropdownChange(this.value)" style="min-width:200px;max-width:260px;">
+            ${javaOptions.map(j=>`<option value="${escHtml(j.value)}" ${j.value===javaPath?'selected':''}>${escHtml(j.label)}</option>`).join('')}
+            ${javaPath && !javaOptions.find(j=>j.value===javaPath) ? `<option value="${escHtml(javaPath)}" selected>Custom: ${escHtml(javaPath)}</option>` : ''}
+          </select>
+        </div>
+      </div>
+      <div class="s-row">
+        <div class="s-lbl"><div class="s-lname">Custom Java path</div><div class="s-ldesc">Or paste a specific java.exe path directly</div></div>
+        <div class="s-ctrl">
+          <input class="sinput" id="javaPathInput" value="${escHtml(javaPath)}" placeholder="Leave blank for auto-detect"
+            style="width:220px" onchange="saveSetting('javaPath',this.value);syncJavaDropdown(this.value)">
+        </div>
       </div>
       <div class="s-row">
         <div class="s-lbl"><div class="s-lname">Custom JVM arguments</div><div class="s-ldesc">Extra flags appended after the standard args</div></div>
@@ -91,10 +105,9 @@ async function renderSettingsPanel() {
         <div class="s-lbl"><div class="s-lname">Color theme</div><div class="s-ldesc">Changes the accent color throughout the launcher</div></div>
         <div class="s-ctrl">
           <div class="theme-picker">
-            ${Object.entries(THEMES).map(([key,t]) => `
+            ${Object.entries(THEMES).map(([key,t])=>`
               <button class="theme-btn ${theme===key?'on':''}" id="theme-${key}"
-                onclick="setTheme('${key}')" title="${t.label}"
-                style="--tbg:${t['--accent']}">
+                onclick="setTheme('${key}')" title="${t.label}" style="--tbg:${t['--accent']}">
                 <span class="theme-swatch"></span>
                 <span>${t.emoji} ${t.label}</span>
               </button>`).join('')}
@@ -126,23 +139,20 @@ async function renderSettingsPanel() {
     <div class="s-section">
       <div class="s-stitle">Updates</div>
       <div class="s-row">
-        <div class="s-lbl">
-          <div class="s-lname">Celery Launcher updates</div>
-          <div class="s-ldesc" id="updateStatusText">Check for the latest version from GitHub releases.</div>
-        </div>
+        <div class="s-lbl"><div class="s-lname">Celery Launcher updates</div><div class="s-ldesc" id="updateStatusText">Check for the latest version from GitHub.</div></div>
         <div class="s-ctrl" id="updateControls">
           <button class="btn" id="checkUpdateBtn" onclick="checkForUpdate()">Check for updates</button>
         </div>
       </div>
       <div id="updateProgressRow" style="display:none;padding:8px 0;">
-        <div class="progress-bar" style="width:100%;"><div class="progress-fill" id="updateProgressFill" style="width:0%"></div></div>
+        <div class="progress-bar"><div class="progress-fill" id="updateProgressFill" style="width:0%"></div></div>
       </div>
     </div>
 
     <div class="s-section">
       <div class="s-stitle">System</div>
       <div class="s-row">
-        <div class="s-lbl"><div class="s-lname">Create desktop shortcut</div><div class="s-ldesc">Add a shortcut to your desktop that opens the launcher directly</div></div>
+        <div class="s-lbl"><div class="s-lname">Create desktop shortcut</div><div class="s-ldesc">Adds a shortcut to your desktop</div></div>
         <div class="s-ctrl"><button class="btn p" onclick="createShortcut()">Create shortcut</button></div>
       </div>
       <div class="s-row">
@@ -156,102 +166,83 @@ async function renderSettingsPanel() {
     </div>
   `;
 
-  // Wire up the update status listener
-  if (window.launcher.onUpdateStatus) {
-    window.launcher.onUpdateStatus(handleUpdateStatus);
-  }
+  if (window.launcher.onUpdateStatus) window.launcher.onUpdateStatus(handleUpdateStatus);
+}
+
+function onJavaDropdownChange(value) {
+  saveSetting('javaPath', value);
+  const input = document.getElementById('javaPathInput');
+  if (input) input.value = value;
+}
+
+function syncJavaDropdown(value) {
+  const sel = document.getElementById('javaDropdown');
+  if (!sel) return;
+  // Try to select matching option
+  for (const opt of sel.options) { if (opt.value === value) { sel.value = value; return; } }
+  // Not found — add as custom option
+  const opt = document.createElement('option');
+  opt.value = value; opt.textContent = 'Custom: ' + value; opt.selected = true;
+  sel.appendChild(opt);
 }
 
 function handleUpdateStatus(data) {
-  const statusEl   = document.getElementById('updateStatusText');
-  const ctrlEl     = document.getElementById('updateControls');
-  const progressRow= document.getElementById('updateProgressRow');
-  const progressFill=document.getElementById('updateProgressFill');
+  const statusEl    = document.getElementById('updateStatusText');
+  const ctrlEl      = document.getElementById('updateControls');
+  const progressRow = document.getElementById('updateProgressRow');
+  const progressFill= document.getElementById('updateProgressFill');
   if (!statusEl) return;
-
   statusEl.textContent = data.message;
-
-  if (data.status === 'checking') {
-    ctrlEl.innerHTML = `<button class="btn" disabled>Checking...</button>`;
-  } else if (data.status === 'available') {
-    ctrlEl.innerHTML = `
-      <button class="btn p" onclick="downloadUpdate()">↓ Download v${escHtml(data.version)}</button>
-      <button class="btn" onclick="checkForUpdate()" style="margin-left:6px;">Re-check</button>`;
-  } else if (data.status === 'downloading') {
-    if (progressRow) progressRow.style.display = 'block';
-    if (progressFill) progressFill.style.width = (data.percent||0) + '%';
-    ctrlEl.innerHTML = `<span style="font-size:11px;color:var(--text3);">${data.percent||0}%</span>`;
-  } else if (data.status === 'ready') {
-    if (progressRow) progressRow.style.display = 'none';
-    ctrlEl.innerHTML = `<button class="btn p" onclick="installUpdate()" style="animation:pulse 1.5s infinite;">↻ Restart &amp; install</button>`;
-  } else if (data.status === 'latest') {
-    ctrlEl.innerHTML = `<button class="btn" onclick="checkForUpdate()">✓ Up to date</button>`;
-  } else if (data.status === 'error') {
-    ctrlEl.innerHTML = `<button class="btn" onclick="checkForUpdate()">Retry</button>`;
+  if (data.status==='checking') {
+    ctrlEl.innerHTML=`<button class="btn" disabled>Checking...</button>`;
+  } else if (data.status==='available') {
+    ctrlEl.innerHTML=`<button class="btn p" onclick="downloadUpdate()">↓ Download v${escHtml(data.version)}</button>`;
+  } else if (data.status==='downloading') {
+    if(progressRow)progressRow.style.display='block';
+    if(progressFill)progressFill.style.width=(data.percent||0)+'%';
+    ctrlEl.innerHTML=`<span style="font-size:11px;color:var(--text3);">${data.percent||0}%</span>`;
+  } else if (data.status==='ready') {
+    if(progressRow)progressRow.style.display='none';
+    ctrlEl.innerHTML=`<button class="btn p" onclick="installUpdate()">↻ Restart &amp; install</button>`;
+  } else if (data.status==='latest') {
+    ctrlEl.innerHTML=`<button class="btn" onclick="checkForUpdate()">✓ Up to date</button>`;
+  } else if (data.status==='error') {
+    ctrlEl.innerHTML=`<button class="btn" onclick="checkForUpdate()">Retry</button>`;
   }
 }
 
 async function checkForUpdate() {
-  const statusEl = document.getElementById('updateStatusText');
-  const ctrlEl   = document.getElementById('updateControls');
-  if (statusEl) statusEl.textContent = 'Checking for updates...';
-  if (ctrlEl)   ctrlEl.innerHTML = `<button class="btn" disabled>Checking...</button>`;
-  const result = await window.launcher.checkForUpdate();
-  if (!result.success && statusEl) {
-    statusEl.textContent = result.error || 'Could not check for updates.';
-    if (ctrlEl) ctrlEl.innerHTML = `<button class="btn" onclick="checkForUpdate()">Retry</button>`;
-  }
+  const s=document.getElementById('updateStatusText');
+  const c=document.getElementById('updateControls');
+  if(s)s.textContent='Checking...';
+  if(c)c.innerHTML=`<button class="btn" disabled>Checking...</button>`;
+  const r=await window.launcher.checkForUpdate();
+  if(!r.success&&s){s.textContent=r.error||'Could not check for updates.';if(c)c.innerHTML=`<button class="btn" onclick="checkForUpdate()">Retry</button>`;}
 }
+async function downloadUpdate() { await window.launcher.downloadUpdate(); }
+async function installUpdate()  { await window.launcher.installUpdate();  }
 
-async function downloadUpdate() {
-  const statusEl = document.getElementById('updateStatusText');
-  if (statusEl) statusEl.textContent = 'Starting download...';
-  const progressRow = document.getElementById('updateProgressRow');
-  if (progressRow) progressRow.style.display = 'block';
-  await window.launcher.downloadUpdate();
-}
-
-async function installUpdate() {
-  const statusEl = document.getElementById('updateStatusText');
-  if (statusEl) statusEl.textContent = 'Closing and installing update...';
-  await window.launcher.installUpdate();
-}
-
-async function saveSetting(key, value) {
-  currentSettings[key] = value;
-  await window.launcher.saveSettings(currentSettings);
-}
-
-async function toggleSetting(el, key) {
-  el.classList.toggle('on');
-  currentSettings[key] = el.classList.contains('on');
-  await window.launcher.saveSettings(currentSettings);
-}
+async function saveSetting(key, value) { currentSettings[key]=value; await window.launcher.saveSettings(currentSettings); }
+async function toggleSetting(el, key)  { el.classList.toggle('on'); currentSettings[key]=el.classList.contains('on'); await window.launcher.saveSettings(currentSettings); }
 
 async function setTextSize(size) {
-  currentSettings.textSize = size;
-  await window.launcher.saveSettings(currentSettings);
-  applyTextSize(size);
-  ['sm','md','lg','xl'].forEach(s => document.getElementById('tsize-'+s)?.classList.toggle('p', s===size));
+  currentSettings.textSize=size; await window.launcher.saveSettings(currentSettings); applyTextSize(size);
+  ['sm','md','lg','xl'].forEach(s=>document.getElementById('tsize-'+s)?.classList.toggle('p',s===size));
   toast('Text size updated');
 }
 
 async function setTheme(key) {
-  currentSettings.theme = key;
-  await window.launcher.saveSettings(currentSettings);
-  applyTheme(key);
-  document.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('on', b.id==='theme-'+key));
-  toast('Theme: ' + THEMES[key].label);
+  currentSettings.theme=key; await window.launcher.saveSettings(currentSettings); applyTheme(key);
+  document.querySelectorAll('.theme-btn').forEach(b=>b.classList.toggle('on',b.id==='theme-'+key));
+  toast('Theme: '+THEMES[key].label);
 }
 
 async function createShortcut() {
-  const result = await window.launcher.createShortcut();
-  if (result.success) toast('Desktop shortcut created!');
-  else toast('Shortcut failed: ' + (result.error||'unknown'));
+  const r=await window.launcher.createShortcut();
+  if(r.success)toast('Desktop shortcut created!'); else toast('Failed: '+(r.error||'unknown'));
 }
 
 async function clearLogs() {
-  const result = await window.launcher.clearLogFolder();
-  if (result.success) toast(`Cleared ${result.cleared||0} log file(s)`);
-  else toast('Failed to clear logs');
+  const r=await window.launcher.clearLogFolder();
+  if(r.success)toast('Cleared '+(r.cleared||0)+' log file(s)'); else toast('Failed to clear logs');
 }
