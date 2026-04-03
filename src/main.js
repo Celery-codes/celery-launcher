@@ -32,6 +32,20 @@ const LOGS_DIR      = path.join(DATA_DIR, 'logs');
 
 global.paths = { DATA_DIR, INSTANCES_DIR, VERSIONS_DIR, ASSETS_DIR, LIBRARIES_DIR, JAVA_DIR };
 
+// ── Safe instance folder resolution ──────────────────────────────────────────
+// Uses inst.folderName if set (new instances), falls back to inst.id (old ones)
+function getInstanceDir(instanceId) {
+  const inst = store.get('instances',[]).find(i => i.id === instanceId);
+  const folderName = inst?.folderName || instanceId;
+  const dir = path.join(INSTANCES_DIR, folderName);
+  // If named folder doesn't exist but id-based does, use id-based (migration safety)
+  if (!fs.existsSync(dir) && inst?.folderName) {
+    const fallback = path.join(INSTANCES_DIR, instanceId);
+    if (fs.existsSync(fallback)) return fallback;
+  }
+  return dir;
+}
+
 // ── Log session ───────────────────────────────────────────────────────────────
 let currentLogStream = null;
 function openLogSession(instanceName) {
@@ -48,7 +62,6 @@ function closeLogSession() {
   if (currentLogStream) { try { currentLogStream.end('\n=== Session ended ===\n'); } catch {} currentLogStream = null; }
 }
 
-// ── Window ────────────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
     width:1100, height:700, minWidth:900, minHeight:600,
@@ -69,16 +82,15 @@ app.whenReady().then(() => {
   });
   createWindow();
 
-  // Background token refresh every 30 minutes — keeps sessions alive
+  // Background token refresh every 30 minutes
   setInterval(async () => {
     try {
-      const accounts = store.get('accounts', []);
-      for (const account of accounts) {
+      for (const account of store.get('accounts',[])) {
         try {
           const refreshed = await refreshToken(account);
-          const all = store.get('accounts', []);
-          const idx = all.findIndex(a => a.uuid === refreshed.uuid);
-          if (idx >= 0) { all[idx] = refreshed; store.set('accounts', all); }
+          const all = store.get('accounts',[]);
+          const idx = all.findIndex(a => a.uuid===refreshed.uuid);
+          if (idx>=0) { all[idx]=refreshed; store.set('accounts',all); }
         } catch {}
       }
     } catch {}
@@ -88,7 +100,6 @@ app.whenReady().then(() => {
 });
 app.on('window-all-closed', () => { if (process.platform!=='darwin') app.quit(); });
 
-// Window controls
 ipcMain.on('window-minimize', () => mainWindow.minimize());
 ipcMain.on('window-maximize', () => { if(mainWindow.isMaximized()) mainWindow.unmaximize(); else mainWindow.maximize(); });
 ipcMain.on('window-close',    () => mainWindow.close());
@@ -97,7 +108,7 @@ ipcMain.handle('get-app-version', () => app.getVersion());
 // Auth
 ipcMain.handle('auth-microsoft', async () => {
   try { const a=await authenticateMicrosoft(mainWindow); store.set('account',a); return {success:true,account:a}; }
-  catch(e) { return {success:false,error:e.message}; }
+  catch(e){return{success:false,error:e.message};}
 });
 ipcMain.handle('auth-logout', async (_,uuid) => {
   await logout(uuid);
@@ -105,7 +116,7 @@ ipcMain.handle('auth-logout', async (_,uuid) => {
   return {success:true};
 });
 ipcMain.handle('auth-get-accounts', () => store.get('accounts',[]));
-ipcMain.handle('auth-set-active', (_,uuid) => { store.set('activeAccount',uuid); return {success:true}; });
+ipcMain.handle('auth-set-active',   (_,uuid) => { store.set('activeAccount',uuid); return {success:true}; });
 ipcMain.handle('auth-refresh', async (_,uuid) => {
   try {
     const accounts=store.get('accounts',[]);
@@ -114,26 +125,23 @@ ipcMain.handle('auth-refresh', async (_,uuid) => {
     const refreshed=await refreshToken(account);
     store.set('accounts', accounts.map(a=>a.uuid===uuid?refreshed:a));
     return {success:true,account:refreshed};
-  } catch(e) { return {success:false,error:e.message}; }
+  } catch(e){return{success:false,error:e.message};}
 });
 
 // Instances
 ipcMain.handle('instances-get',  () => store.get('instances',[]));
 ipcMain.handle('instances-save', (_,list) => { store.set('instances',list); return {success:true}; });
 ipcMain.handle('instance-open-folder', (_,instanceId) => {
-  const dir = path.join(INSTANCES_DIR, instanceId);
+  const dir = getInstanceDir(instanceId);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir,{recursive:true});
-  // Write a name file so the folder is identifiable in Explorer
-  const inst = store.get('instances',[]).find(i=>i.id===instanceId);
-  if (inst) { try { fs.writeFileSync(path.join(dir,'_instance_name.txt'),inst.name,'utf8'); } catch {} }
   shell.openPath(dir);
   return {success:true};
 });
 
 // Versions
-ipcMain.handle('versions-minecraft', async () => { try { return await fetchMcVersions(); } catch(e) { return {error:e.message}; }});
-ipcMain.handle('versions-fabric',    async (_,v) => { try { return await fetchFabricVersions(v); } catch(e) { return {error:e.message}; }});
-ipcMain.handle('versions-forge',     async (_,v) => { try { return await fetchForgeVersions(v); }  catch(e) { return {error:e.message}; }});
+ipcMain.handle('versions-minecraft', async () => { try{return await fetchMcVersions();}catch(e){return{error:e.message};} });
+ipcMain.handle('versions-fabric',    async (_,v) => { try{return await fetchFabricVersions(v);}catch(e){return{error:e.message};} });
+ipcMain.handle('versions-forge',     async (_,v) => { try{return await fetchForgeVersions(v);}catch(e){return{error:e.message};} });
 
 // Launch
 ipcMain.handle('launch-game', async (_,{instanceId,accountUuid}) => {
@@ -149,7 +157,6 @@ ipcMain.handle('launch-game', async (_,{instanceId,accountUuid}) => {
     mainWindow.webContents.send('launch-status',{status:'preparing',message:'Preparing launch...'});
     await downloadVersion(instance,settings,p=>mainWindow.webContents.send('launch-status',{status:'downloading',...p}));
 
-    // Refresh token before launch
     let freshAccount=account;
     try {
       freshAccount=await refreshToken(account);
@@ -157,10 +164,10 @@ ipcMain.handle('launch-game', async (_,{instanceId,accountUuid}) => {
       const ai=all.findIndex(a=>a.uuid===freshAccount.uuid);
       if(ai>=0){all[ai]=freshAccount;store.set('accounts',all);}
     } catch(e) {
-      mainWindow.webContents.send('game-log','[Celery] Token refresh failed: '+e.message+'\n');
+      mainWindow.webContents.send('game-log','[Celery] Token refresh: '+e.message+'\n');
       if (Date.now()>(account.tokenExpiry||0)) {
-        mainWindow.webContents.send('launch-status',{status:'error',message:'Session expired — please re-login in Accounts'});
-        return {success:false,error:'Session expired. Go to Accounts and log in again.'};
+        mainWindow.webContents.send('launch-status',{status:'error',message:'Session expired — please re-login'});
+        return {success:false,error:'Session expired.'};
       }
     }
 
@@ -184,7 +191,6 @@ ipcMain.handle('launch-game', async (_,{instanceId,accountUuid}) => {
         if(settings.closeOnLaunch)mainWindow.show();
       }
     );
-
     if(settings.closeOnLaunch)mainWindow.hide();
     mainWindow.webContents.send('launch-status',{status:'running',message:'Game is running'});
     return {success:true};
@@ -198,65 +204,45 @@ ipcMain.handle('launch-game', async (_,{instanceId,accountUuid}) => {
 ipcMain.handle('mods-search-modrinth',  async (_,opts) => { try{return await searchModrinth(opts);}catch(e){return{error:e.message};} });
 ipcMain.handle('mods-search-curseforge',async (_,opts) => { try{return await searchCurseForge({...opts,key:store.get('settings.curseforgeKey','')});}catch(e){return{error:e.message};} });
 ipcMain.handle('mods-install', async (_,{instanceId,mod,source}) => {
-  try { const r=await installMod(instanceId,mod,source,p=>mainWindow.webContents.send('mod-install-progress',{modId:mod.id,...p})); return {success:true,deps:r?.deps}; }
+  try{const r=await installMod(instanceId,mod,source,p=>mainWindow.webContents.send('mod-install-progress',{modId:mod.id,...p}));return{success:true,deps:r?.deps};}
   catch(e){return{success:false,error:e.message};}
 });
 ipcMain.handle('mods-remove',       async (_,{instanceId,modId}) => { try{await removeMod(instanceId,modId);return{success:true};}catch(e){return{success:false,error:e.message};} });
-ipcMain.handle('mods-get-installed',async (_,id)  => { try{return await getInstalledMods(id);}catch{return[];} });
-ipcMain.handle('mods-update-all',   async (_,id)  => { try{const r=await updateAllMods(id,p=>mainWindow.webContents.send('mod-update-progress',p));return{success:true,results:r};}catch(e){return{success:false,error:e.message};} });
+ipcMain.handle('mods-get-installed',async (_,id) => { try{return await getInstalledMods(id);}catch{return[];} });
+ipcMain.handle('mods-update-all',   async (_,id) => { try{const r=await updateAllMods(id,p=>mainWindow.webContents.send('mod-update-progress',p));return{success:true,results:r};}catch(e){return{success:false,error:e.message};} });
 ipcMain.handle('mods-toggle',       async (_,{instanceId,modId,enable}) => { try{return toggleMod(instanceId,modId,enable);}catch(e){return{success:false,error:e.message};} });
 ipcMain.handle('mods-toggle-bulk',  async (_,{instanceId,modIds,enable}) => { try{return toggleMods(instanceId,modIds,enable);}catch(e){return{success:false,error:e.message};} });
-ipcMain.handle('mods-check-deps',   async (_,id)  => { try{return await checkMissingDependencies(id);}catch{return[];} });
+ipcMain.handle('mods-check-deps',   async (_,id) => { try{return await checkMissingDependencies(id);}catch{return[];} });
 
 // Settings
 ipcMain.handle('settings-get', () => store.get('settings',{ram:4,javaPath:'',customJvmArgs:'',closeOnLaunch:false,pvpFlags:true,autoUpdateMods:false,curseforgeKey:''}));
 ipcMain.handle('settings-save',(_,s) => { store.set('settings',s); return {success:true}; });
 
-// Scan for installed Java versions to populate the dropdown
+// Scan installed Java versions
 ipcMain.handle('java-find-all', () => {
-  const results = [{ label:'Auto-detect', value:'' }];
-  const fs2 = require('fs');
-  const path2 = require('path');
   const { execSync } = require('child_process');
-
-  const checkPath = (p, label) => {
-    if (fs2.existsSync(p)) {
-      try {
-        const out = execSync(`"${p}" -version 2>&1`,{timeout:2000}).toString();
-        const m = out.match(/version "([^"]+)"/);
-        const ver = m?.[1] || '?';
-        results.push({ label: `${label} (${ver})`, value: p });
-      } catch { results.push({ label, value: p }); }
-    }
+  const results = [{ label:'Auto-detect', value:'' }];
+  const check = (p, label) => {
+    if (!fs.existsSync(p)) return;
+    try {
+      const out = execSync(`"${p}" -version 2>&1`,{timeout:2000}).toString();
+      const m = out.match(/version "([^"]+)"/);
+      results.push({ label:`${label} (${m?.[1]||'?'})`, value:p });
+    } catch { results.push({ label, value:p }); }
   };
-
-  // Adoptium
-  const adoptBase = 'C:\\Program Files\\Eclipse Adoptium';
-  if (fs2.existsSync(adoptBase)) {
-    for (const dir of fs2.readdirSync(adoptBase)) {
-      const exe = path2.join(adoptBase,dir,'bin','java.exe');
-      checkPath(exe, `Adoptium ${dir.split('-')[0]}`);
-    }
+  const adoptBase='C:\\Program Files\\Eclipse Adoptium';
+  if (fs.existsSync(adoptBase)) {
+    for (const d of fs.readdirSync(adoptBase)) check(path.join(adoptBase,d,'bin','java.exe'),`Adoptium ${d.split('-')[0]}`);
   }
-  // Microsoft
-  const msBase = 'C:\\Program Files\\Microsoft';
-  if (fs2.existsSync(msBase)) {
-    for (const dir of fs2.readdirSync(msBase).filter(d=>d.startsWith('jdk'))) {
-      checkPath(path2.join(msBase,dir,'bin','java.exe'), `Microsoft ${dir}`);
-    }
+  const msBase='C:\\Program Files\\Microsoft';
+  if (fs.existsSync(msBase)) {
+    for (const d of fs.readdirSync(msBase).filter(x=>x.startsWith('jdk'))) check(path.join(msBase,d,'bin','java.exe'),`Microsoft ${d}`);
   }
-  // Oracle/other
-  const javaBase = 'C:\\Program Files\\Java';
-  if (fs2.existsSync(javaBase)) {
-    for (const dir of fs2.readdirSync(javaBase)) {
-      checkPath(path2.join(javaBase,dir,'bin','java.exe'), `Java ${dir}`);
-    }
+  const javaBase='C:\\Program Files\\Java';
+  if (fs.existsSync(javaBase)) {
+    for (const d of fs.readdirSync(javaBase)) check(path.join(javaBase,d,'bin','java.exe'),`Java ${d}`);
   }
-  // JAVA_HOME
-  if (process.env.JAVA_HOME) {
-    checkPath(path2.join(process.env.JAVA_HOME,'bin','java.exe'), 'JAVA_HOME');
-  }
-
+  if (process.env.JAVA_HOME) check(path.join(process.env.JAVA_HOME,'bin','java.exe'),'JAVA_HOME');
   return results;
 });
 
@@ -330,18 +316,17 @@ ipcMain.handle('options-capture', (_,{instanceId,name}) => {
 });
 ipcMain.handle('options-apply', (_,{instanceId,profileId}) => {
   try {
-    const profiles=optionsModule.listProfiles();
-    const profile=profiles.find(p=>p.id===profileId);
+    const profile=optionsModule.listProfiles().find(p=>p.id===profileId);
     if (!profile) throw new Error('Profile not found');
     return optionsModule.applyProfileToInstance(instanceId,profile);
   } catch(e){return{success:false,error:e.message};}
 });
 ipcMain.handle('options-delete', (_,profileId) => optionsModule.deleteProfile(profileId));
 
-// Instance folder ops
+// Instance folder ops — use getInstanceDir for named folders
 ipcMain.handle('instance-list-folder', (_,{instanceId,folder}) => {
   try {
-    const dir=path.join(INSTANCES_DIR,instanceId,folder);
+    const dir=path.join(getInstanceDir(instanceId),folder);
     if (!fs.existsSync(dir)) return {files:[]};
     return {files:fs.readdirSync(dir,{withFileTypes:true}).map(e=>{
       const full=path.join(dir,e.name); let size=0,modified=null;
@@ -351,29 +336,26 @@ ipcMain.handle('instance-list-folder', (_,{instanceId,folder}) => {
   } catch(e){return{files:[],error:e.message};}
 });
 ipcMain.handle('instance-open-subfolder', (_,{instanceId,folder}) => {
-  const dir=path.join(INSTANCES_DIR,instanceId,folder);
+  const dir=path.join(getInstanceDir(instanceId),folder);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir,{recursive:true});
   shell.openPath(dir); return {success:true};
 });
 ipcMain.handle('instance-delete-file', (_,{instanceId,folder,filename}) => {
   try {
-    const fp=path.join(INSTANCES_DIR,instanceId,folder,filename);
+    const fp=path.join(getInstanceDir(instanceId),folder,filename);
     if(fs.existsSync(fp)){const st=fs.statSync(fp);if(st.isDirectory())fs.rmSync(fp,{recursive:true});else fs.unlinkSync(fp);}
     return {success:true};
   } catch(e){return{success:false,error:e.message};}
 });
 ipcMain.handle('instance-read-servers', (_,instanceId) => {
   try {
-    const f=path.join(INSTANCES_DIR,instanceId,'servers.dat');
+    const f=path.join(getInstanceDir(instanceId),'servers.dat');
     if (!fs.existsSync(f)) return {servers:[]};
     const text=fs.readFileSync(f).toString('latin1');
     const readable=[]; let cur='';
     for(const c of text){if(c.charCodeAt(0)>=32&&c.charCodeAt(0)<127)cur+=c;else{if(cur.length>3)readable.push(cur);cur='';}}
     const servers=[];
-    for(let j=0;j<readable.length-1;j++){
-      const s=readable[j],next=readable[j+1];
-      if(next.includes('.')||next.includes(':')||next==='localhost'){servers.push({name:s,ip:next});j++;}
-    }
+    for(let j=0;j<readable.length-1;j++){const s=readable[j],next=readable[j+1];if(next.includes('.')||next.includes(':')||next==='localhost'){servers.push({name:s,ip:next});j++;}}
     return {servers:servers.slice(0,50)};
   } catch(e){return{servers:[],error:e.message};}
 });
@@ -390,17 +372,17 @@ ipcMain.handle('instance-sync-mod-count', async (_,instanceId) => {
 // Skin
 ipcMain.handle('skin-get-head', async (_,{uuid,username}) => {
   try {
-    const filePath=await fetchSkinHead(uuid,username);
-    if (!filePath) return {success:false};
-    return {success:true,dataUrl:'data:image/png;base64,'+fs.readFileSync(filePath).toString('base64'),filePath};
+    const fp=await fetchSkinHead(uuid,username);
+    if (!fp) return {success:false};
+    return {success:true,dataUrl:'data:image/png;base64,'+fs.readFileSync(fp).toString('base64'),filePath:fp};
   } catch(e){return{success:false,error:e.message};}
 });
 ipcMain.handle('skin-set-window-icon', async (_,{uuid,username}) => {
   try {
-    const filePath=await fetchSkinHead(uuid,username);
-    if (!filePath||!mainWindow) return {success:false};
+    const fp=await fetchSkinHead(uuid,username);
+    if (!fp||!mainWindow) return {success:false};
     const {nativeImage}=require('electron');
-    const img=nativeImage.createFromPath(filePath);
+    const img=nativeImage.createFromPath(fp);
     if (!img.isEmpty()) mainWindow.setIcon(img);
     return {success:true};
   } catch(e){return{success:false,error:e.message};}

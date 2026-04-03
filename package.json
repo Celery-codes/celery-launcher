@@ -1,6 +1,6 @@
 {
   "name": "celery-launcher",
-  "version": "2.4.3",
+  "version": "2.4.4",
   "description": "A fast, minimal Minecraft launcher for PvP and SMP — by Celery",
   "main": "src/main.js",
   "scripts": {

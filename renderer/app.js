@@ -428,8 +428,15 @@ async function createInstance() {
   const mcVersion=document.getElementById('newMcVer').value;
   const loader=document.getElementById('newLoader').value;
   const loaderVersion=loader!=='Vanilla'?document.getElementById('newLoaderVer').value:'';
-  const instance={ id:Date.now().toString(36)+Math.random().toString(36).substr(2),
-    name,mcVersion,loader,loaderVersion,mods:0,createdAt:new Date().toISOString() };
+  const instanceId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+    // Safe folder name — letters, numbers, spaces, hyphens only, max 40 chars
+    const folderName = name.replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, '_').slice(0, 40) || instanceId;
+    const instance = {
+      id: instanceId,
+      name, mcVersion, loader, loaderVersion, mods: 0,
+      folderName,
+      createdAt: new Date().toISOString()
+    };
   instances.push(instance);
   await saveInstances();
   closeAllModals();

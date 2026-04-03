@@ -5,8 +5,17 @@ const { downloadFile } = require('./downloader');
 const { getModrinthVersions } = require('../api/modrinth');
 
 function getInstanceDir(instanceId) {
-  // Always instanceId — simple, no renaming
-  return path.join(global.paths.INSTANCES_DIR, instanceId);
+  const Store = require('electron-store');
+  const store = new Store();
+  const inst = store.get('instances', []).find(i => i.id === instanceId);
+  const folderName = inst?.folderName || instanceId;
+  const dir = path.join(global.paths.INSTANCES_DIR, folderName);
+  // Migration safety: if named dir doesn't exist but id-based does, use id-based
+  if (!require('fs').existsSync(dir) && inst?.folderName) {
+    const fallback = path.join(global.paths.INSTANCES_DIR, instanceId);
+    if (require('fs').existsSync(fallback)) return fallback;
+  }
+  return dir;
 }
 
 function syncModsWithFolder(instanceId) {
