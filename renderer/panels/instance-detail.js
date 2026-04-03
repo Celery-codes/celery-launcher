@@ -119,8 +119,8 @@ function renderModsToolbar(content, installed) {
         oninput="filterDetailMods(this.value)" value="${escHtml(modViewSearch)}">
       <div style="display:flex;gap:3px;">
         <button class="clf ${modViewFilter==='all'?'on':''}" onclick="setModFilter('all')">All (${installed.length})</button>
-        <button class="clf ${modViewFilter==='enabled'?'on':''}" onclick="setModFilter('enabled')">On (${enabled})</button>
-        <button class="clf ${modViewFilter==='disabled'?'on':''}" onclick="setModFilter('disabled')">Off (${disabled})</button>
+        <button class="clf ${modViewFilter==='enabled'?'on':''}" onclick="setModFilter('enabled')">Enabled (${enabled})</button>
+        <button class="clf ${modViewFilter==='disabled'?'on':''}" onclick="setModFilter('disabled')">Disabled (${disabled})</button>
       </div>
       <div style="display:flex;gap:4px;margin-left:auto;">
         <button class="btn" onclick="selectAllMods()" title="Select all">☑</button>

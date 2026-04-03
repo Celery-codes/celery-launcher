@@ -25,11 +25,14 @@
 }
 .icard .iname {
   font-size: 13px; font-weight: 500; color: var(--text);
-  margin-bottom: 3px; white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; padding-right: 28px;
+  margin-bottom: 2px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; padding-right: 24px;
 }
-.icard .imeta { font-size: 11px; color: var(--text3); font-family: var(--mono); }
-.icard .itags { display:flex; gap:4px; margin-top:8px; flex-wrap:wrap; }
+.icard .imeta {
+  font-size: 13px; color: var(--text3); font-family: var(--mono);
+  white-space: normal; word-break: break-word; line-height: 1.4;
+}
+.icard .itags { display:flex; gap:4px; margin-top:5px; flex-wrap:wrap; }
 
 /* Mod status badges — Enabled/Disabled not On/Off */
 .mod-status-badge { font-size:0.65em; font-weight:600; padding:2px 7px; border-radius:10px; letter-spacing:.3px; white-space:nowrap; }

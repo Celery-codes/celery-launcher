@@ -82,8 +82,8 @@ app.whenReady().then(() => {
   });
   createWindow();
 
-  // Background token refresh every 30 minutes
-  setInterval(async () => {
+  // Refresh all stored account tokens (runs on startup and every 30 minutes)
+  async function refreshAllTokens() {
     try {
       for (const account of store.get('accounts',[])) {
         try {
@@ -94,7 +94,11 @@ app.whenReady().then(() => {
         } catch {}
       }
     } catch {}
-  }, 30 * 60 * 1000);
+  }
+
+  // Refresh immediately on startup so tokens are always current
+  refreshAllTokens();
+  setInterval(refreshAllTokens, 30 * 60 * 1000);
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length===0) createWindow(); });
 });
@@ -408,8 +412,9 @@ ipcMain.handle('show-input-dialog', async (_,{title,label,placeholder}) => {
     const html=`<!DOCTYPE html><html><head><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Outfit',sans-serif;background:#131614;color:#e8ede9;padding:20px;user-select:none;}.title{font-size:14px;font-weight:500;margin-bottom:4px;}.label{font-size:11px;color:#9aa89b;margin-bottom:8px;text-transform:uppercase;letter-spacing:.8px;}input{width:100%;background:#191c1a;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:8px 10px;color:#e8ede9;font-size:13px;font-family:inherit;outline:none;}input:focus{border-color:rgba(74,222,128,0.4);}.btns{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;}button{padding:6px 16px;border-radius:6px;font-size:12px;font-family:inherit;cursor:pointer;border:1px solid rgba(255,255,255,0.12);background:#1f2320;color:#9aa89b;}button.ok{background:rgba(74,222,128,0.15);border-color:rgba(74,222,128,0.35);color:#4ade80;font-weight:500;}</style></head><body><div class="title">${title||'Enter value'}</div><div class="label">${label||''}</div><input id="inp" placeholder="${placeholder||''}" autofocus><div class="btns"><button onclick="cancel()">Cancel</button><button class="ok" onclick="ok()">Save</button></div><script>const {ipcRenderer}=require('electron');document.getElementById('inp').addEventListener('keydown',e=>{if(e.key==='Enter')ok();if(e.key==='Escape')cancel();});function ok(){ipcRenderer.send('input-dialog-result',document.getElementById('inp').value.trim());}function cancel(){ipcRenderer.send('input-dialog-result',null);}</script></body></html>`;
     win.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent(html));
     const {ipcMain:ipc2}=require('electron');
-    const handler=(_,val)=>{ipc2.removeListener('input-dialog-result',handler);win.destroy();resolve(val);};
+    let resolved=false;
+    const handler=(_,val)=>{if(resolved)return;resolved=true;ipc2.removeListener('input-dialog-result',handler);try{win.destroy();}catch{}resolve(val);};
     ipc2.once('input-dialog-result',handler);
-    win.on('closed',()=>{ipc2.removeListener('input-dialog-result',handler);resolve(null);});
+    win.on('closed',()=>{if(!resolved){resolved=true;ipc2.removeListener('input-dialog-result',handler);resolve(null);}});
   });
 });

@@ -78,15 +78,15 @@ body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-fam
 
 /* ── Instance grid ── */
 .igrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:10px;}
-.icard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;cursor:pointer;transition:all 0.18s ease;position:relative;}
+.icard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:8px;cursor:pointer;transition:all 0.18s ease;position:relative;}
 .icard:hover{border-color:var(--border2);background:var(--bg3);transform:translateY(-1px);}
 .icard:active{transform:translateY(0);}
 .icard.sel{border-color:rgba(74,222,128,0.45);background:var(--green-dim);}
-.iicon{width:40px;height:40px;border-radius:8px;background:var(--bg4);margin-bottom:10px;display:flex;align-items:center;justify-content:center;font-size:1.1em;border:1px solid var(--border);}
-.iname{font-size:0.85em;font-weight:500;color:var(--text);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:28px;}
-.imeta{font-size:0.72em;color:var(--text3);font-family:var(--mono);}
-.itags{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;}
-.tag{font-size:0.65em;padding:2px 7px;border-radius:4px;font-weight:500;}
+.iicon{width:38px;height:38px;border-radius:7px;background:var(--bg4);margin-bottom:6px;display:flex;align-items:center;justify-content:center;font-size:1.1em;border:1px solid var(--border);}
+.iname{font-size:1.05em;font-weight:500;color:var(--text);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:22px;}
+.imeta{font-size:1.05em;color:var(--text3);font-family:var(--mono);white-space:normal;word-break:break-word;line-height:1.4;}
+.itags{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap;}
+.tag{font-size:0.72em;padding:2px 6px;border-radius:4px;font-weight:500;}
 .tf{background:rgba(74,222,128,0.1);color:#4ade80;border:1px solid rgba(74,222,128,0.15);}
 .tfo{background:rgba(251,146,60,0.1);color:#fb923c;border:1px solid rgba(251,146,60,0.15);}
 .tv{background:rgba(148,163,184,0.1);color:#94a3b8;border:1px solid rgba(148,163,184,0.15);}

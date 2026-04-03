@@ -1,4 +1,4 @@
-/* Slightly larger instance card text */
+/* Instance card text sizes */
 .iname { font-size: 14px !important; }
-.imeta { font-size: 12px !important; }
+.imeta { font-size: 13px !important; white-space: normal !important; word-break: break-word !important; line-height: 1.4 !important; }
 .icard .itags .tag { font-size: 11px; }
