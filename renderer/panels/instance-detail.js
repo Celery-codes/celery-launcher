@@ -164,7 +164,7 @@ function renderModsList(content, installed) {
           ${m.iconUrl?`<img src="${escHtml(m.iconUrl)}" width="20" height="20" style="border-radius:3px;" onerror="this.style.display='none'">`:''}
           <span class="mname" style="font-size:.82em;">${escHtml(m.title||m.filename)}</span></div></td>
         <td style="font-size:.72em;color:var(--text3);font-family:var(--mono);">${escHtml(ver)}</td>
-        <td><span class="mod-status-badge ${enabled?'mod-enabled':'mod-dis'}">${enabled?'On':'Off'}</span></td>
+        <td><span class="mod-status-badge ${enabled?'mod-enabled':'mod-dis'}">${enabled?'Enabled':'Disabled'}</span></td>
         <td style="display:flex;gap:4px;justify-content:flex-end;">
           <button class="ibtn" style="font-size:.68em;padding:2px 8px;" onclick="toggleOneMod('${escHtml(m.id)}',${!enabled})">${enabled?'Disable':'Enable'}</button>
           <button class="ibtn inst" style="font-size:.68em;padding:2px 8px;" data-modid="${escHtml(m.id)}" data-modname="${escHtml(m.title||m.filename)}">Remove</button>
@@ -183,7 +183,7 @@ function renderModsList(content, installed) {
           <div class="mstats"><div class="mstat">Source: <span>${escHtml(m.source||'unknown')}</span></div><div class="mstat">Added: <span>${m.installedAt?new Date(m.installedAt).toLocaleDateString():'?'}</span></div></div>
         </div>
         <div style="display:flex;gap:5px;align-items:center;flex-shrink:0;">
-          <span class="mod-status-badge ${enabled?'mod-enabled':'mod-dis'}">${enabled?'On':'Off'}</span>
+          <span class="mod-status-badge ${enabled?'mod-enabled':'mod-dis'}">${enabled?'Enabled':'Disabled'}</span>
           <button class="ibtn" style="font-size:.72em;" onclick="toggleOneMod('${escHtml(m.id)}',${!enabled})">${enabled?'Disable':'Enable'}</button>
           <button class="ibtn inst" data-modid="${escHtml(m.id)}" data-modname="${escHtml(m.title||m.filename)}" style="font-size:.72em;">Remove</button>
         </div></div>`;

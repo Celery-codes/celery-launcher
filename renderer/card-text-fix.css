@@ -1,0 +1,4 @@
+/* Slightly larger instance card text */
+.iname { font-size: 14px !important; }
+.imeta { font-size: 12px !important; }
+.icard .itags .tag { font-size: 11px; }
