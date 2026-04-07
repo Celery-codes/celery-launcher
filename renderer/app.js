@@ -12,7 +12,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     const s = await window.launcher.getSettings();
     applyTextSize(s.textSize || 'md');
-    if (typeof applyTheme === 'function') applyTheme(s.theme || 'green');
+    const savedTheme = s.theme || 'green';
+    if (savedTheme.startsWith('custom_')) {
+      const id = savedTheme.slice(7);
+      const ct = (s.customThemes || []).find(t => t.id === id);
+      if (ct && typeof applyThemeObject === 'function') applyThemeObject(ct.vars);
+      else if (typeof applyTheme === 'function') applyTheme('green');
+    } else {
+      if (typeof applyTheme === 'function') applyTheme(savedTheme);
+    }
+    if (typeof applyAnimations === 'function') applyAnimations(s.animations !== false);
+    if (typeof applyGlassEffects === 'function') applyGlassEffects(s.glassEffects === true);
+    const gs = s.glowStrength !== undefined ? s.glowStrength : 8;
+    document.documentElement.style.setProperty('--glow-strength', gs);
+    if (s.glowColor) document.documentElement.style.setProperty('--glow-color', s.glowColor);
+    window.effects.initAll(s);
   } catch { applyTextSize('md'); }
 
   try {
@@ -50,6 +64,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.launcher.onPlaytimeUpdate(({ instanceId, sessionSeconds }) => {
       const inst = instances.find(i => i.id===instanceId);
       if (inst) { inst.playtimeSeconds=(inst.playtimeSeconds||0)+sessionSeconds; saveInstances(); }
+    });
+  }
+
+  if (window.launcher.onSessionWarning) {
+    window.launcher.onSessionWarning(({ username }) => {
+      toast('Session for ' + username + ' may expire — re-login in Accounts if needed');
     });
   }
 
@@ -138,17 +158,17 @@ function renderInstanceGrid(list, search='', loaderFilter='all') {
   grid.innerHTML = filtered.map(inst => {
     const pt = fmtPt(inst.playtimeSeconds||0);
 
-    // Icon rendering — custom image fills the icon box; emoji uses small box; default gradient
-    let iconInner;
+    // Icon rendering — custom image; emoji; no icon (iconNone); default gradient+controller
+    let iconInner = null;
     if (inst.iconDataUrl) {
       iconInner = `<img src="${escHtml(inst.iconDataUrl)}"
         style="width:40px;height:40px;border-radius:8px;object-fit:cover;flex-shrink:0;">`;
     } else if (inst.iconEmoji) {
-      iconInner = `<span style="font-size:22px;">${escHtml(inst.iconEmoji)}</span>`;
-    } else {
-      const grads = {Fabric:'#4ade80,#16a34a',Forge:'#fb923c,#c2410c',NeoForge:'#fb923c,#c2410c',Quilt:'#a78bfa,#7c3aed',Vanilla:'#60a5fa,#2563eb'};
-      const g = grads[inst.loader]||grads.Vanilla;
-      iconInner = `<div style="width:40px;height:40px;border-radius:8px;background:linear-gradient(135deg,${g});opacity:.8;display:flex;align-items:center;justify-content:center;font-size:18px;">⚡</div>`;
+      const emojiBg = inst.iconBg ? `background:${inst.iconBg};` : 'background:var(--bg4);';
+      iconInner = `<div style="width:40px;height:40px;border-radius:8px;${emojiBg}display:flex;align-items:center;justify-content:center;font-size:22px;">${escHtml(inst.iconEmoji)}</div>`;
+    } else if (!inst.iconNone) {
+      const bg = inst.iconBg ? inst.iconBg : 'var(--bg4)';
+      iconInner = `<div style="width:40px;height:40px;border-radius:8px;background:${bg};display:flex;align-items:center;justify-content:center;font-size:20px;">&#127918;</div>`;
     }
 
     return `
@@ -160,7 +180,7 @@ function renderInstanceGrid(list, search='', loaderFilter='all') {
       ondragover="onCardDragOver(event)"
       ondrop="onCardDrop(event,'${inst.id}')"
       ondragend="onCardDragEnd(event)">
-      <div class="iicon">${iconInner}</div>
+      ${iconInner ? `<div class="iicon">${iconInner}</div>` : ''}
       <div class="iname">${escHtml(inst.name)}</div>
       <div class="imeta">${inst.mcVersion} · ${inst.loader}${inst.mods>0?' · '+inst.mods+' mods':''}</div>
       <div class="itags">
@@ -265,12 +285,21 @@ async function editInstanceAppearance(id) {
       `).join('')}
     </div>
 
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;">Icon background color</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+      <input type="color" id="iconBgPicker_${id}" value="${inst.iconBg||'#16a34a'}"
+        style="width:36px;height:30px;border-radius:6px;border:1px solid var(--border);cursor:pointer;padding:2px;background:var(--bg3);"
+        oninput="updateIconBg('${id}',this.value)">
+      <span style="font-size:0.8em;color:var(--text3);">Applies to emoji and default icon</span>
+      <button class="btn" onclick="updateIconBg('${id}','')">Reset</button>
+    </div>
+
     <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;">Or upload a custom image</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;">
       <input type="file" id="iconUpload_${id}" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none"
         onchange="uploadInstanceIcon('${id}',this)">
       <button class="btn" onclick="document.getElementById('iconUpload_${id}').click()">📁 Choose image</button>
-      ${inst.iconDataUrl||inst.iconEmoji?`<button class="btn danger" onclick="clearIcon('${id}')">✕ Remove icon</button>`:''}
+      ${!inst.iconNone?`<button class="btn danger" onclick="clearIcon('${id}')">Remove icon</button>`:`<button class="btn" onclick="resetIcon('${id}')">Use default</button>`}
     </div>
     ${inst.iconDataUrl?`<img src="${inst.iconDataUrl}" style="width:48px;height:48px;border-radius:8px;object-fit:cover;margin-bottom:12px;border:1px solid var(--border);">`: ''}
 
@@ -314,11 +343,27 @@ async function uploadInstanceIcon(id, input) {
 
 async function clearIcon(id) {
   const inst = instances.find(i=>i.id===id); if (!inst) return;
-  inst.iconDataUrl=null; inst.iconEmoji=null;
+  inst.iconDataUrl=null; inst.iconEmoji=null; inst.iconNone=true;
   await saveInstances();
   renderInstanceGrid(instances);
   document.querySelector('[data-appearance-overlay]')?.remove();
   editInstanceAppearance(id);
+}
+
+async function resetIcon(id) {
+  const inst = instances.find(i=>i.id===id); if (!inst) return;
+  inst.iconDataUrl=null; inst.iconEmoji=null; inst.iconNone=false;
+  await saveInstances();
+  renderInstanceGrid(instances);
+  document.querySelector('[data-appearance-overlay]')?.remove();
+  editInstanceAppearance(id);
+}
+
+async function updateIconBg(id, color) {
+  const inst = instances.find(i=>i.id===id); if (!inst) return;
+  inst.iconBg = color || null;
+  await saveInstances();
+  renderInstanceGrid(instances);
 }
 
 function filterInstances(search, loaderFilter) {
@@ -355,9 +400,13 @@ function toggleCtxMenu(id) {
 async function openFolder(id) { closeMenus(); await window.launcher.openInstanceFolder(id); }
 
 async function removeInstance(id) {
+  const inst = instances.find(i=>i.id===id);
   instances=instances.filter(i=>i.id!==id);
   if (selectedInstanceId===id) { selectedInstanceId=null; updateStrip(); }
-  await saveInstances(); renderInstanceGrid(instances); toast('Instance removed');
+  await saveInstances();
+  try { await window.launcher.deleteInstanceFolder(id); } catch {}
+  renderInstanceGrid(instances);
+  toast('Instance "'+(inst?.name||id)+'" removed');
 }
 
 async function updateInstanceMods(id) {
@@ -462,9 +511,17 @@ async function openEditModal(id) {
 
 async function saveEdit() {
   const inst=instances.find(i=>i.id===editingInstanceId); if (!inst) return;
-  inst.name=document.getElementById('editName').value.trim()||inst.name;
+  const newName=document.getElementById('editName').value.trim()||inst.name;
+  const newFolderName=newName.replace(/[^a-zA-Z0-9 _-]/g,'').replace(/\s+/g,'_').slice(0,40)||inst.id;
+  const oldFolderName=inst.folderName||inst.id;
+  inst.name=newName;
   inst.mcVersion=document.getElementById('editMcVer').value;
   inst.loader=document.getElementById('editLoader').value;
+  if (newFolderName!==oldFolderName) {
+    const r=await window.launcher.renameInstanceFolder({instanceId:inst.id,newFolderName});
+    if (r.success) inst.folderName=newFolderName;
+    else toast('Folder rename failed: '+r.error);
+  }
   await saveInstances(); closeAllModals(); renderInstancesPanel();
   if (selectedInstanceId===editingInstanceId) updateStrip();
   toast('Instance updated');
@@ -524,3 +581,89 @@ function toast(msg) {
 
 function fmtNum(n) { if(!n)return'0'; if(n>=1000000)return(n/1000000).toFixed(1)+'M'; if(n>=1000)return(n/1000).toFixed(1)+'K'; return String(n); }
 function escHtml(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+function hexToRgbObj(hex) {
+  if (!hex || hex.length < 7) return { r:74, g:222, b:128 };
+  return {
+    r: parseInt(hex.slice(1,3), 16),
+    g: parseInt(hex.slice(3,5), 16),
+    b: parseInt(hex.slice(5,7), 16)
+  };
+}
+
+window.effects = {
+  _grad: null,
+  _part: null,
+
+  initAll(settings) {
+    this.updateGradient(settings);
+    this.updateParticles(settings);
+  },
+
+  updateGradient(settings) {
+    const canvas = document.getElementById('gradientCanvas');
+    if (!canvas) return;
+
+    if (!settings.gradientEnabled) {
+      if (this._grad) this._grad.stop();
+      document.documentElement.classList.remove('gradient-active');
+      return;
+    }
+
+    if (!this._grad) this._grad = new GradientShader(canvas);
+
+    this._grad.updateConfig({
+      color1: hexToRgbObj(settings.gradientColor1 || '#0d3320'),
+      color2: hexToRgbObj(settings.gradientColor2 || '#4ade80'),
+      color3: hexToRgbObj(settings.gradientColor3 || '#22c55e'),
+      speed:  Number(settings.gradientSpeed  || 0.4),
+      noise:  Number(settings.gradientNoise  || 0.12),
+      scale:  Number(settings.gradientScale  || 1.2)
+    });
+
+    if (!this._grad.running) {
+      const ok = this._grad.start();
+      if (ok) document.documentElement.classList.add('gradient-active');
+    }
+  },
+
+  updateParticles(settings) {
+    const canvas = document.getElementById('particlesCanvas');
+    if (!canvas) return;
+
+    if (!settings.particlesEnabled) {
+      if (this._part) this._part.stop();
+      document.documentElement.classList.remove('particles-active');
+      return;
+    }
+
+    if (!this._part) this._part = new ParticleSystem(canvas);
+
+    const accent = document.documentElement.style.getPropertyValue('--green') || '#4ade80';
+    this._part.updateConfig({
+      count:    settings.particleCount   || 40,
+      speed:    Number(settings.particleSpeed   || 0.5),
+      opacity:  Number(settings.particleOpacity || 0.5),
+      lines:    settings.particleLines !== false,
+      color:    settings.particleColor || accent,
+      maxSize:  2.4,
+      lineDist: 130
+    });
+
+    if (!this._part.running) {
+      this._part.start();
+      document.documentElement.classList.add('particles-active');
+    }
+  },
+
+  async syncParticleColor() {
+    if (this._part && this._part.running) {
+      try {
+        const s = await window.launcher.getSettings();
+        if (s.particleColor) return; // custom color set, don't override
+      } catch {}
+      const accent = document.documentElement.style.getPropertyValue('--green') || '#4ade80';
+      this._part.config.color = accent;
+    }
+  }
+};

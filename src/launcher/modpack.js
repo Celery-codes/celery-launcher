@@ -82,7 +82,8 @@ async function importMrpack(tmpDir, indexPath, onProgress) {
   const loaderVersion = quiltVersion || fabricVersion || forgeVersion || '';
 
   const instanceId  = uuidv4();
-  const instanceDir = path.join(INSTANCES_DIR, instanceId);
+  const folderName  = name.replace(/[^a-zA-Z0-9 _-]/g,'').replace(/\s+/g,'_').slice(0,40) || instanceId;
+  const instanceDir = path.join(INSTANCES_DIR, folderName);
   const modsDir     = path.join(instanceDir, 'mods');
   fs.mkdirSync(modsDir, { recursive: true });
 
@@ -142,7 +143,7 @@ async function importMrpack(tmpDir, indexPath, onProgress) {
   fs.writeFileSync(path.join(metaDir, 'mods.json'), JSON.stringify(modsMeta, null, 2));
   onProgress({ message: 'Modpack imported!', percent: 100 });
 
-  return { id: instanceId, name, mcVersion, loader, loaderVersion,
+  return { id: instanceId, name, mcVersion, loader, loaderVersion, folderName,
     mods: modsMeta.length, importedFrom: 'mrpack', createdAt: new Date().toISOString() };
 }
 
@@ -158,7 +159,8 @@ async function importCurseForgeZip(tmpDir, manifestPath, onProgress) {
   const loaderVersion = loaderInfo?.id?.split('-')[1] || '';
 
   const instanceId  = uuidv4();
-  const instanceDir = path.join(INSTANCES_DIR, instanceId);
+  const folderName  = name.replace(/[^a-zA-Z0-9 _-]/g,'').replace(/\s+/g,'_').slice(0,40) || instanceId;
+  const instanceDir = path.join(INSTANCES_DIR, folderName);
   fs.mkdirSync(path.join(instanceDir, 'mods'), { recursive: true });
 
   const overridesDir = path.join(tmpDir, manifest.overrides || 'overrides');
@@ -174,7 +176,7 @@ async function importCurseForgeZip(tmpDir, manifestPath, onProgress) {
 
   onProgress({ message: 'CurseForge pack imported (mods require CurseForge API key)', percent: 100 });
 
-  return { id: instanceId, name, mcVersion, loader, loaderVersion,
+  return { id: instanceId, name, mcVersion, loader, loaderVersion, folderName,
     mods: 0, importedFrom: 'curseforge-zip',
     pendingCfMods: manifest.files?.length || 0, createdAt: new Date().toISOString() };
 }

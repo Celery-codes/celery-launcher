@@ -52,7 +52,7 @@ body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-fam
 .acc-chev{margin-left:auto;color:var(--text3);font-size:0.65em;}
 
 /* ── Main content ── */
-.main{flex:1;overflow-y:auto;background:var(--bg);}
+.main{flex:1;overflow-y:auto;background:var(--bg);margin-right:8px;}
 .main::-webkit-scrollbar{width:3px;}
 .main::-webkit-scrollbar-thumb{background:var(--bg5);border-radius:4px;}
 .panel{display:none;padding:22px;}
@@ -199,3 +199,217 @@ body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-fam
 /* ── Misc ── */
 input[type=range]{accent-color:var(--green);}
 ::selection{background:rgba(74,222,128,0.25);color:var(--text);}
+
+/* ── Keyframe animations ── */
+@keyframes panelIn {
+  from { opacity:0; transform:translateY(10px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+@keyframes modalIn {
+  from { opacity:0; transform:translate(-50%,-54%) scale(0.96); }
+  to   { opacity:1; transform:translate(-50%,-50%) scale(1); }
+}
+@keyframes overlayIn {
+  from { opacity:0; }
+  to   { opacity:1; }
+}
+@keyframes toastIn {
+  from { opacity:0; transform:translateY(10px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
+/* ── Panel entrance ── */
+.panel.on { animation:panelIn 0.22s cubic-bezier(0.16,1,0.3,1); }
+
+/* ── Modal entrance ── */
+.modal.open { animation:modalIn 0.2s cubic-bezier(0.16,1,0.3,1); }
+.modal-overlay.open { animation:overlayIn 0.15s ease; }
+
+/* ── Disable animations ── */
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* ── Glass effects (opt-in) ── */
+html.glass-fx .modal-overlay.open {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+html.glass-fx .modal {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+html.glass-fx .ctx-menu {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* ── Enhanced interactions ── */
+.nav { transition:background 0.14s ease, color 0.14s ease; }
+.nav.on { background:var(--green-dim2); }
+.nav.on::before { content:''; position:absolute; left:0; top:50%; transform:translateY(-50%); width:2px; height:16px; background:var(--green); border-radius:0 2px 2px 0; }
+
+.btn { transition:background 0.14s ease, color 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, transform 0.1s ease; }
+.btn.p:hover { box-shadow:0 0 calc(var(--glow-strength, 8) * 1.5px) color-mix(in srgb, var(--glow-color, var(--green)) 22%, transparent); }
+
+.icard { transition:all 0.2s cubic-bezier(0.16,1,0.3,1); }
+.icard:hover { box-shadow:0 4px 20px rgba(0,0,0,0.3); }
+.icard.sel { box-shadow:0 0 0 1px rgba(74,222,128,0.2), 0 2px 12px rgba(0,0,0,0.2); }
+
+.launch-btn { transition:background var(--transition), transform var(--transition), box-shadow 0.14s ease; }
+.launch-btn:not(:disabled):hover { box-shadow:0 0 calc(var(--glow-strength, 8) * 2.5px) color-mix(in srgb, var(--glow-color, var(--green)) 22%, transparent); }
+
+/* ── Fancy glowing scrollbar (main + any .fancy-scroll) ── */
+.main::-webkit-scrollbar,
+.fancy-scroll::-webkit-scrollbar { width:7px; height:7px; }
+
+.main::-webkit-scrollbar-track,
+.fancy-scroll::-webkit-scrollbar-track { background:transparent; margin:4px 0; }
+
+.main::-webkit-scrollbar-thumb,
+.fancy-scroll::-webkit-scrollbar-thumb {
+  background:var(--green);
+  border-radius:10px;
+  min-height:28px;
+  box-shadow:0 0 calc(var(--glow-strength, 8) * 1px) color-mix(in srgb, var(--glow-color, var(--green)) 55%, transparent);
+}
+.main::-webkit-scrollbar-thumb:hover,
+.fancy-scroll::-webkit-scrollbar-thumb:hover {
+  background:var(--green2);
+  box-shadow:0 0 calc(var(--glow-strength, 8) * 1.8px) color-mix(in srgb, var(--glow-color, var(--green)) 70%, transparent);
+}
+
+/* ── Performance recommendations ── */
+.perf-chevron-open { transform: rotate(0deg); }
+.perf-chevron:not(.perf-chevron-open) { transform: rotate(-90deg); }
+.perf-collapsed { display: none; }
+.ibtn.p { background:var(--green-dim); border-color:rgba(74,222,128,.3); color:var(--green); }
+.ibtn.p:hover { background:rgba(74,222,128,.2); }
+
+/* ── Modal refinements ── */
+.modal { box-shadow:0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04); }
+
+/* ── Launch strip refinement ── */
+.launch-strip { box-shadow:0 -1px 0 var(--border), 0 -4px 16px rgba(0,0,0,0.15); }
+
+/* ── Custom theme picker ── */
+.custom-chip {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:4px 8px;
+  border-radius:var(--radius-sm);
+  background:var(--bg3);
+  border:1px solid var(--border);
+  font-size:0.75em;
+  color:var(--text2);
+  cursor:pointer;
+  transition:all 0.14s ease;
+  user-select:none;
+}
+.custom-chip:hover { border-color:var(--border2); color:var(--text); }
+.custom-chip.active { border-color:var(--green); color:var(--green); background:var(--green-dim); }
+.custom-chip-dot {
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  flex-shrink:0;
+}
+.custom-chip-del {
+  width:14px;
+  height:14px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:3px;
+  color:var(--text4);
+  font-size:11px;
+  line-height:1;
+  transition:color 0.12s ease;
+  margin-left:1px;
+}
+.custom-chip-del:hover { color:var(--red); }
+
+/* ── Glow strength + color CSS variables ── */
+:root { --glow-strength: 8; --glow-color: var(--green); }
+
+/* ── Sub-settings section (gradient/particles sliders) ── */
+.sfx-sub {
+  border-left: 2px solid var(--border);
+  margin: 0 0 4px 6px;
+  padding-left: 14px;
+}
+.sfx-sub .s-row { padding:7px 0; }
+.sfx-color {
+  width:28px; height:28px;
+  border-radius:var(--radius-sm);
+  border:1px solid var(--border2);
+  padding:2px;
+  background:var(--bg4);
+  cursor:pointer;
+}
+
+/* ── Gradient active — make UI semi-transparent ── */
+html.gradient-active body { background:transparent; }
+html.gradient-active #gradientCanvas { display:block !important; }
+
+html.gradient-active .titlebar {
+  background:color-mix(in srgb, var(--bg2) 84%, transparent);
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+}
+html.gradient-active .sidebar {
+  background:color-mix(in srgb, var(--bg2) 84%, transparent);
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+}
+html.gradient-active .main { background:transparent; }
+html.gradient-active .launch-strip {
+  background:color-mix(in srgb, var(--bg2) 87%, transparent);
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+}
+html.gradient-active .icard {
+  background:color-mix(in srgb, var(--bg2) 70%, transparent);
+  backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);
+}
+html.gradient-active .icard:hover {
+  background:color-mix(in srgb, var(--bg3) 75%, transparent);
+}
+html.gradient-active .icard.sel {
+  background:color-mix(in srgb, var(--green-dim) 80%, transparent);
+}
+html.gradient-active .mrow {
+  background:color-mix(in srgb, var(--bg2) 70%, transparent);
+  backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);
+}
+html.gradient-active .acc-btn {
+  background:color-mix(in srgb, var(--bg3) 72%, transparent);
+  backdrop-filter:blur(6px);
+}
+html.gradient-active .pcard {
+  background:color-mix(in srgb, var(--bg2) 68%, transparent);
+  backdrop-filter:blur(4px);
+}
+html.gradient-active .ctx-menu {
+  background:color-mix(in srgb, var(--bg3) 90%, transparent);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+}
+html.gradient-active .modal {
+  background:color-mix(in srgb, var(--bg2) 90%, transparent);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+}
+html.gradient-active .s-section {
+  background:transparent;
+}
+
+/* ── Particles active ── */
+html.particles-active #particlesCanvas { display:block !important; }

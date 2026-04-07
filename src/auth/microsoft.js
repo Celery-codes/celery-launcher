@@ -134,20 +134,38 @@ async function getMicrosoftTokens(code) {
 }
 
 async function refreshToken(account) {
-  if (!account.refreshToken) throw new Error('No refresh token — please log in again');
-  const res = await fetch(MS_TOKEN_URL, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id:     MS_CLIENT_ID,
-      refresh_token: account.refreshToken,
-      grant_type:    'refresh_token',
-      redirect_uri:  REDIRECT_URI
-    }).toString()
-  });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error_description || data.error);
-  return await getMinecraftAccount(data, account);
+  if (!account.refreshToken) throw new Error('No refresh token -- please log in again');
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      if (attempt > 0) await new Promise(r => setTimeout(r, attempt * 2000));
+      const res = await fetch(MS_TOKEN_URL, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id:     MS_CLIENT_ID,
+          refresh_token: account.refreshToken,
+          grant_type:    'refresh_token',
+          redirect_uri:  REDIRECT_URI
+        }).toString()
+      });
+      const data = await res.json();
+      if (data.error) {
+        // Auth errors (invalid/expired refresh token) are permanent — don't retry
+        const permanent = ['invalid_grant','interaction_required','consent_required'];
+        if (permanent.some(e => data.error === e || (data.error_description||'').includes(e))) {
+          throw new Error(data.error_description || data.error);
+        }
+        throw new Error(data.error_description || data.error);
+      }
+      return await getMinecraftAccount(data, account);
+    } catch(e) {
+      lastError = e;
+      // Don't retry permanent auth failures
+      if (e.message && (e.message.includes('invalid_grant') || e.message.includes('please log in'))) throw e;
+    }
+  }
+  throw lastError;
 }
 
 async function getMinecraftAccount(msTokens, existingAccount = null) {
@@ -222,7 +240,7 @@ async function getMinecraftAccount(msTokens, existingAccount = null) {
     username:     profData.name,
     mcToken:      mcData.access_token,
     refreshToken: msTokens.refresh_token || existingAccount?.refreshToken || '',
-    tokenExpiry:  Date.now() + ((msTokens.expires_in || 86400) * 1000),
+    tokenExpiry:  Date.now() + ((mcData.expires_in || 86400) * 1000),
     ownsGame,
     skin:         profData.skins?.find(s => s.state === 'ACTIVE')?.url || null,
     addedAt:      existingAccount?.addedAt || new Date().toISOString()

@@ -3,6 +3,8 @@ let consoleFilter = 'all';
 let consoleSearch = '';
 let consoleAutoScroll = true;
 let consoleLineLimit = 5000;
+let consoleDomLimit  = 600; // max DOM nodes rendered at once
+let _conSearchTimer  = null;
 
 function initConsole() {
   if (window._consoleListenerAttached) return;
@@ -71,15 +73,23 @@ function rebuildConsoleOutput() {
   const out = document.getElementById('conOut');
   if (!out) return;
   out.innerHTML = '';
-  const lines = filteredLines();
-  if (!lines.length) {
+  const all = filteredLines();
+  if (!all.length) {
     out.innerHTML = `<div class="con-empty">${consoleLines.length === 0
       ? 'No output yet — launch a game to see logs here.'
       : 'No lines match the current filter.'}</div>`;
     return;
   }
+  const truncated = all.length > consoleDomLimit;
+  const lines = truncated ? all.slice(-consoleDomLimit) : all;
   const sq = consoleSearch ? consoleSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : null;
   const frag = document.createDocumentFragment();
+  if (truncated) {
+    const notice = document.createElement('div');
+    notice.className = 'con-truncated';
+    notice.textContent = 'Showing last ' + consoleDomLimit + ' of ' + all.length + ' lines — scroll up to see older entries, or clear the console.';
+    frag.appendChild(notice);
+  }
   for (const line of lines) frag.appendChild(buildLineEl(line, sq));
   out.appendChild(frag);
   requestAnimationFrame(() => { out.scrollTop = out.scrollHeight; });
@@ -88,7 +98,8 @@ function rebuildConsoleOutput() {
 function parseLogLine(raw, forceLevel) {
   const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
   let level = forceLevel || 'info';
-  const mcMatch = raw.match(/\[(FATAL|ERROR|WARN|INFO|DEBUG|TRACE)\]/i);
+  // Match both [WARN] and [Server thread/WARN] (Minecraft 1.7+ format)
+  const mcMatch = raw.match(/\[[\w\s]*\/?(FATAL|ERROR|WARN|INFO|DEBUG|TRACE)\]/i);
   if (mcMatch) {
     const lvl = mcMatch[1].toUpperCase();
     if (lvl === 'ERROR' || lvl === 'FATAL') level = 'error';
@@ -103,10 +114,11 @@ function parseLogLine(raw, forceLevel) {
 }
 
 function colorize(html, level) {
-  html = html.replace(/\[(FATAL|ERROR)\]/g,  '<span class="cl-error">[$1]</span>');
-  html = html.replace(/\[(WARN)\]/g,          '<span class="cl-warn">[$1]</span>');
-  html = html.replace(/\[(INFO)\]/g,          '<span class="cl-info">[$1]</span>');
-  html = html.replace(/\[(DEBUG|TRACE)\]/g,   '<span class="cl-debug">[$1]</span>');
+  // Handle both [FATAL] and [Thread/FATAL] formats
+  html = html.replace(/(\[[\w\s]*\/?(FATAL|ERROR)\])/g,   '<span class="cl-error">$1</span>');
+  html = html.replace(/(\[[\w\s]*\/?(WARN)\])/g,           '<span class="cl-warn">$1</span>');
+  html = html.replace(/(\[[\w\s]*\/?(INFO)\])/g,           '<span class="cl-info">$1</span>');
+  html = html.replace(/(\[[\w\s]*\/?(DEBUG|TRACE)\])/g,    '<span class="cl-debug">$1</span>');
   html = html.replace(/^(\[\d{2}:\d{2}:\d{2}\])/g, '<span class="cl-ts">$1</span>');
   html = html.replace(/(\b\w+Exception\b)/g,  '<span class="cl-error">$1</span>');
   html = html.replace(/(&lt;[A-Za-z0-9_]{1,16}&gt;)/g, '<span class="cl-chat">$1</span>');
@@ -171,7 +183,11 @@ function setConFilter(f) {
   rebuildConsoleOutput();
 }
 
-function setConSearch(val) { consoleSearch = val; rebuildConsoleOutput(); }
+function setConSearch(val) {
+  consoleSearch = val;
+  clearTimeout(_conSearchTimer);
+  _conSearchTimer = setTimeout(rebuildConsoleOutput, 160);
+}
 
 function toggleConScroll() {
   consoleAutoScroll = !consoleAutoScroll;

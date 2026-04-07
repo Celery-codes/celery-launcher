@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check \"C:\\\\Users\\\\Evan\\\\Celery\\\\celery-launcher\\\\src\\\\main.js\")",
+      "Bash(node --check \"C:\\\\Users\\\\Evan\\\\Celery\\\\celery-launcher\\\\renderer\\\\panels\\\\instance-detail.js\")",
+      "Bash(npm start:*)",
+      "Bash(node --check renderer/style.css)",
+      "Bash(node --check src/main.js)",
+      "Bash(node --check src/preload-overlay.js)",
+      "Bash(node --check renderer/overlay.js)",
+      "WebSearch",
+      "WebFetch(domain:docs.fabricmc.net)",
+      "WebFetch(domain:github.com)",
+      "Bash(java -version)",
+      "Bash(javac -version)",
+      "Bash(where gradle:*)",
+      "Read(//c/Users/Evan/Celery/**)",
+      "Bash(powershell -Command \"Invoke-WebRequest -Uri 'https://github.com/FabricMC/fabric-example-mod/archive/refs/heads/1.21.zip' -OutFile 'fabric-template.zip'\")",
+      "Bash(powershell -Command \"Expand-Archive -Path 'C:\\\\Users\\\\Evan\\\\Celery\\\\fabric-template.zip' -DestinationPath 'C:\\\\Users\\\\Evan\\\\Celery\\\\fabric-template' -Force\")",
+      "Bash(cp:*)",
+      "Bash(bash gradlew:*)",
+      "Bash(mkdir -p /tmp/mcsrc)",
+      "Bash(jar xf:*)",
+      "Bash(mkdir:*)",
+      "Bash(node --check src/launcher/launch.js)",
+      "Bash(xargs grep:*)",
+      "Bash(node --check renderer/panels/settings.js)",
+      "Bash(node --check renderer/app.js)",
+      "Bash(node --check renderer/gradient-shader.js)",
+      "Bash(node --check renderer/particles.js)",
+      "Bash(node --check renderer/panels/console.js)",
+      "Bash(node --check renderer/panels/instance-detail.js)",
+      "Bash(node --check \"C:\\\\Users\\\\Evan\\\\Celery\\\\celery-launcher\\\\renderer\\\\app.js\")",
+      "Bash(node --check src/auth/microsoft.js)",
+      "Bash(node --check src/launcher/downloader.js)",
+      "Bash(node --check src/preload.js)",
+      "Bash(node --check src/launcher/loaderapis.js)",
+      "Bash(node --check src/launcher/modpack.js)",
+      "Bash(node -e ':*)"
+    ]
+  }
+}

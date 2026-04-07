@@ -155,12 +155,16 @@ async function downloadAssets(assetIndex, assetsDir, onProgress) {
   if (!fs.existsSync(indexFile))
     await downloadFile(assetIndex.url, indexFile, assetIndex.sha1);
 
-  const objects    = Object.values(JSON.parse(fs.readFileSync(indexFile, 'utf8')).objects);
+  const indexData  = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+  const entries    = Object.entries(indexData.objects);
   const objectsDir = path.join(assetsDir, 'objects');
+  // Legacy virtual assets (MC 1.6 - 1.7.2) need files mapped to assets/virtual/<id>/<name>
+  const isVirtual  = !!indexData.virtual;
+  const virtualDir = isVirtual ? path.join(assetsDir, 'virtual', assetIndex.id) : null;
   let done = 0;
 
-  for (let i = 0; i < objects.length; i += 20) {
-    await Promise.all(objects.slice(i, i + 20).map(async obj => {
+  for (let i = 0; i < entries.length; i += 20) {
+    await Promise.all(entries.slice(i, i + 20).map(async ([assetName, obj]) => {
       const prefix  = obj.hash.substring(0, 2);
       const objDir  = path.join(objectsDir, prefix);
       const objFile = path.join(objDir, obj.hash);
@@ -172,9 +176,19 @@ async function downloadAssets(assetIndex, assetsDir, onProgress) {
             objFile, obj.hash);
         } catch {}
       }
+      // For legacy virtual assets, also populate the virtual folder structure
+      if (isVirtual && virtualDir && fs.existsSync(objFile)) {
+        const virtualFile = path.join(virtualDir, assetName);
+        if (!fs.existsSync(virtualFile)) {
+          try {
+            fs.mkdirSync(path.dirname(virtualFile), { recursive: true });
+            fs.copyFileSync(objFile, virtualFile);
+          } catch {}
+        }
+      }
       done++;
     }));
-    onProgress(done / objects.length);
+    onProgress(done / entries.length);
   }
 }
 

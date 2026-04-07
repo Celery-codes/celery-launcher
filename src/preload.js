@@ -14,7 +14,13 @@ contextBridge.exposeInMainWorld('launcher', {
 
   getInstances:       ()       => ipcRenderer.invoke('instances-get'),
   saveInstances:      (list)   => ipcRenderer.invoke('instances-save', list),
-  openInstanceFolder: (id)     => ipcRenderer.invoke('instance-open-folder', id),
+  openInstanceFolder:    (id)   => ipcRenderer.invoke('instance-open-folder', id),
+  deleteInstanceFolder:  (id)   => ipcRenderer.invoke('instance-delete-folder', id),
+  cleanupOrphanFolders: ()     => ipcRenderer.invoke('instances-cleanup-orphans'),
+  renameInstanceFolder:  (opts) => ipcRenderer.invoke('instance-rename-folder', opts),
+  onSessionWarning:      (cb)   => ipcRenderer.on('session-warning', (_, d) => cb(d)),
+  pingServer:            (opts) => ipcRenderer.invoke('net-ping-server', opts),
+  setDnsOptimizer:       ()     => ipcRenderer.invoke('net-set-dns'),
 
   getMcVersions:     ()    => ipcRenderer.invoke('versions-minecraft'),
   getFabricVersions: (v)   => ipcRenderer.invoke('versions-fabric', v),

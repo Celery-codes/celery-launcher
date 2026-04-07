@@ -35,7 +35,8 @@ async function installLoaderApi(instanceId, instance, onProgress) {
   const primaryFile = latest.files.find(f => f.primary) || latest.files[0];
   if (!primaryFile) return { skipped: true, reason: 'No file found' };
 
-  const modsDir = path.join(INSTANCES_DIR, instanceId, 'mods');
+  const folderName = instance.folderName || instanceId;
+  const modsDir = path.join(INSTANCES_DIR, folderName, 'mods');
   if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true });
 
   const destPath = path.join(modsDir, primaryFile.filename);
@@ -48,7 +49,7 @@ async function installLoaderApi(instanceId, instance, onProgress) {
 
   // Add to mods.json
   const { syncModsWithFolder } = require('./mods');
-  const metaDir = path.join(INSTANCES_DIR, instanceId, '.celery');
+  const metaDir = path.join(INSTANCES_DIR, folderName, '.celery');
   if (!fs.existsSync(metaDir)) fs.mkdirSync(metaDir, { recursive: true });
   const modsMetaFile = path.join(metaDir, 'mods.json');
 

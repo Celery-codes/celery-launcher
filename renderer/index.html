@@ -17,7 +17,9 @@
   <link rel="stylesheet" href="card-text-fix.css">
 </head>
 <body>
-  <div id="app">
+  <canvas id="gradientCanvas" style="position:fixed;inset:0;width:100vw;height:100vh;z-index:0;display:none;pointer-events:none;"></canvas>
+  <canvas id="particlesCanvas" style="position:fixed;inset:0;width:100vw;height:100vh;z-index:3;display:none;pointer-events:none;"></canvas>
+  <div id="app" style="position:relative;z-index:2;">
     <div class="titlebar" id="titlebar">
       <div class="titlebar-left">
         <div class="logo-mark">C</div>
@@ -138,6 +140,8 @@
     </div>
   </div>
   <div class="toast" id="toast"></div>
+  <script src="gradient-shader.js"></script>
+  <script src="particles.js"></script>
   <script src="panels/instances.js"></script>
   <script src="panels/instance-detail.js"></script>
   <script src="panels/mods.js"></script>

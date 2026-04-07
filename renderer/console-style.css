@@ -43,8 +43,25 @@
   flex:1; overflow-y:auto; font-family:var(--mono); font-size:0.72em;
   line-height:1.65; padding:6px 10px; background:var(--bg); min-height:0;
 }
-.con-out::-webkit-scrollbar { width:4px; }
-.con-out::-webkit-scrollbar-thumb { background:var(--bg5); border-radius:4px; }
+.con-out::-webkit-scrollbar { width:7px; }
+.con-out::-webkit-scrollbar-track { background:transparent; margin:4px 0; }
+.con-out::-webkit-scrollbar-thumb {
+  background:var(--green);
+  border-radius:10px;
+  min-height:28px;
+  box-shadow:0 0 calc(var(--glow-strength, 8) * 1px) color-mix(in srgb, var(--glow-color, var(--green)) 55%, transparent);
+}
+.con-out::-webkit-scrollbar-thumb:hover {
+  background:var(--green2);
+  box-shadow:0 0 calc(var(--glow-strength, 8) * 1.8px) color-mix(in srgb, var(--glow-color, var(--green)) 70%, transparent);
+}
+
+/* Truncation notice */
+.con-truncated {
+  color:var(--text3); font-family:var(--sans); font-size:0.75em;
+  padding:6px 10px; text-align:center;
+  border-bottom:1px solid var(--border); margin-bottom:4px;
+}
 
 /* Log lines */
 .con-line { padding:1px 4px; border-radius:2px; white-space:pre-wrap; word-break:break-all; display:block; }

@@ -1,0 +1,25 @@
+{
+	"schemaVersion": 1,
+	"id": "celery_menu",
+	"version": "${version}",
+	"name": "Celery Menu",
+	"description": "In-game mod manager for Celery Launcher",
+	"authors": ["Celery-codes"],
+	"contact": {
+		"homepage": "https://github.com/Celery-codes/celery-launcher",
+		"sources": "https://github.com/Celery-codes/celery-launcher"
+	},
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"codes.celery.menu.CeleryMenuMod"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.18.2",
+		"minecraft": ">=1.21",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}

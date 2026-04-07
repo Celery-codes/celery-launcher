@@ -16,6 +16,7 @@ const optionsModule = require('./launcher/options');
 const { fetchSkinHead }    = require('./launcher/skin');
 
 let mainWindow;
+let runningGame = null; // { instanceId }
 const isDev = process.argv.includes('--dev');
 
 const DATA_DIR      = path.join(app.getPath('appData'), 'CeleryLauncher');
@@ -82,7 +83,7 @@ app.whenReady().then(() => {
   });
   createWindow();
 
-  // Refresh all stored account tokens (runs on startup and every 30 minutes)
+  // Refresh all stored account tokens (runs on startup and every 20 minutes)
   async function refreshAllTokens() {
     try {
       for (const account of store.get('accounts',[])) {
@@ -91,14 +92,22 @@ app.whenReady().then(() => {
           const all = store.get('accounts',[]);
           const idx = all.findIndex(a => a.uuid===refreshed.uuid);
           if (idx>=0) { all[idx]=refreshed; store.set('accounts',all); }
-        } catch {}
+        } catch(e) {
+          // If refresh failed and token expires within 4 hours, warn the renderer
+          const expiresIn = (account.tokenExpiry || 0) - Date.now();
+          if (expiresIn < 4 * 60 * 60 * 1000) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('session-warning', { uuid: account.uuid, username: account.username });
+            }
+          }
+        }
       }
     } catch {}
   }
 
   // Refresh immediately on startup so tokens are always current
   refreshAllTokens();
-  setInterval(refreshAllTokens, 30 * 60 * 1000);
+  setInterval(refreshAllTokens, 20 * 60 * 1000);
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length===0) createWindow(); });
 });
@@ -148,56 +157,93 @@ ipcMain.handle('versions-fabric',    async (_,v) => { try{return await fetchFabr
 ipcMain.handle('versions-forge',     async (_,v) => { try{return await fetchForgeVersions(v);}catch(e){return{error:e.message};} });
 
 // Launch
-ipcMain.handle('launch-game', async (_,{instanceId,accountUuid}) => {
-  try {
-    const instances=store.get('instances',[]);
-    const instance=instances.find(i=>i.id===instanceId);
-    if (!instance) throw new Error('Instance not found');
-    const accounts=store.get('accounts',[]);
-    const account=accounts.find(a=>a.uuid===accountUuid);
-    if (!account) throw new Error('No account selected');
-    const settings=store.get('settings',{});
+async function doLaunch(instanceId, accountUuid) {
+  const instances=store.get('instances',[]);
+  const instance=instances.find(i=>i.id===instanceId);
+  if (!instance) throw new Error('Instance not found');
+  const accounts=store.get('accounts',[]);
+  const account=accounts.find(a=>a.uuid===accountUuid);
+  if (!account) throw new Error('No account selected');
+  const settings=store.get('settings',{});
 
-    mainWindow.webContents.send('launch-status',{status:'preparing',message:'Preparing launch...'});
-    await downloadVersion(instance,settings,p=>mainWindow.webContents.send('launch-status',{status:'downloading',...p}));
+  mainWindow.webContents.send('launch-status',{status:'preparing',message:'Preparing launch...'});
+  await downloadVersion(instance,settings,p=>mainWindow.webContents.send('launch-status',{status:'downloading',...p}));
 
-    let freshAccount=account;
+  let freshAccount=account;
+  let refreshOk=false;
+  for (let attempt=0; attempt<3; attempt++) {
     try {
+      if (attempt>0) await new Promise(r=>setTimeout(r,attempt*1500));
       freshAccount=await refreshToken(account);
       const all=store.get('accounts',[]);
       const ai=all.findIndex(a=>a.uuid===freshAccount.uuid);
       if(ai>=0){all[ai]=freshAccount;store.set('accounts',all);}
+      refreshOk=true;
+      break;
     } catch(e) {
-      mainWindow.webContents.send('game-log','[Celery] Token refresh: '+e.message+'\n');
-      if (Date.now()>(account.tokenExpiry||0)) {
-        mainWindow.webContents.send('launch-status',{status:'error',message:'Session expired — please re-login'});
-        return {success:false,error:'Session expired.'};
-      }
+      mainWindow.webContents.send('game-log','[Celery] Token refresh attempt '+(attempt+1)+': '+e.message+'\n');
+      // Permanent auth error — stop retrying
+      if (e.message&&(e.message.includes('invalid_grant')||e.message.includes('please log in'))) break;
     }
+  }
+  if (!refreshOk && Date.now()>(account.tokenExpiry||0)) {
+    mainWindow.webContents.send('launch-status',{status:'error',message:'Session expired -- please re-login in Accounts'});
+    return {success:false,error:'Session expired.'};
+  }
 
-    mainWindow.webContents.send('launch-status',{status:'launching',message:'Starting Minecraft...'});
-    const logPath=openLogSession(instance.name);
-    mainWindow.webContents.send('log-file-path',logPath);
-    let launchStart=null;
+  mainWindow.webContents.send('launch-status',{status:'launching',message:'Starting Minecraft...'});
+  const logPath=openLogSession(instance.name);
+  mainWindow.webContents.send('log-file-path',logPath);
+  let launchStart=null;
 
-    await launchMinecraft(instance,freshAccount,settings,
-      data => { if(!launchStart)launchStart=Date.now(); mainWindow.webContents.send('game-log',data); writeLog(data); },
-      () => {
-        if (launchStart) {
-          const secs=Math.floor((Date.now()-launchStart)/1000);
-          const all=store.get('instances',[]);
-          const idx=all.findIndex(i=>i.id===instanceId);
-          if(idx>=0){all[idx].playtimeSeconds=(all[idx].playtimeSeconds||0)+secs;all[idx].lastPlayed=new Date().toISOString();store.set('instances',all);}
-          mainWindow.webContents.send('playtime-update',{instanceId,sessionSeconds:secs});
-        }
-        closeLogSession();
-        mainWindow.webContents.send('game-closed');
-        if(settings.closeOnLaunch)mainWindow.show();
+  runningGame = { instanceId, accountUuid };
+
+  await launchMinecraft(instance,freshAccount,settings,
+    data => { if(!launchStart)launchStart=Date.now(); mainWindow.webContents.send('game-log',data); writeLog(data); },
+    () => {
+      runningGame = null;
+      if (launchStart) {
+        const secs=Math.floor((Date.now()-launchStart)/1000);
+        const all=store.get('instances',[]);
+        const idx=all.findIndex(i=>i.id===instanceId);
+        if(idx>=0){all[idx].playtimeSeconds=(all[idx].playtimeSeconds||0)+secs;all[idx].lastPlayed=new Date().toISOString();store.set('instances',all);}
+        mainWindow.webContents.send('playtime-update',{instanceId,sessionSeconds:secs});
       }
-    );
-    if(settings.closeOnLaunch)mainWindow.hide();
-    mainWindow.webContents.send('launch-status',{status:'running',message:'Game is running'});
-    return {success:true};
+      closeLogSession();
+
+      // Check if the Celery Menu mod requested a restart (Apply & Restart flow)
+      const instDir = getInstanceDir(instanceId);
+      const celeryDir = path.join(instDir, '.celery');
+      const restartFlag = path.join(celeryDir, 'restart-requested.json');
+      if (fs.existsSync(restartFlag)) {
+        try { fs.unlinkSync(restartFlag); } catch {}
+        // Apply any pending settings changes before relaunching
+        const pendingSettings = path.join(celeryDir, 'pending-settings.json');
+        if (fs.existsSync(pendingSettings)) {
+          try {
+            const changes = JSON.parse(fs.readFileSync(pendingSettings, 'utf8'));
+            const current = store.get('settings', {});
+            store.set('settings', { ...current, ...changes });
+            fs.unlinkSync(pendingSettings);
+          } catch {}
+        }
+        mainWindow.webContents.send('launch-status',{status:'preparing',message:'Applying changes and restarting...'});
+        setTimeout(() => doLaunch(instanceId, accountUuid).catch(() => {}), 2000);
+        return;
+      }
+
+      mainWindow.webContents.send('game-closed');
+      if(settings.closeOnLaunch)mainWindow.show();
+    }
+  );
+  if(settings.closeOnLaunch)mainWindow.hide();
+  mainWindow.webContents.send('launch-status',{status:'running',message:'Game is running'});
+  return {success:true};
+}
+
+ipcMain.handle('launch-game', async (_,{instanceId,accountUuid}) => {
+  try {
+    return await doLaunch(instanceId, accountUuid);
   } catch(e) {
     mainWindow.webContents.send('launch-status',{status:'error',message:e.message});
     return {success:false,error:e.message};
@@ -326,6 +372,84 @@ ipcMain.handle('options-apply', (_,{instanceId,profileId}) => {
   } catch(e){return{success:false,error:e.message};}
 });
 ipcMain.handle('options-delete', (_,profileId) => optionsModule.deleteProfile(profileId));
+
+// Scan instances dir and delete any folder not belonging to a current instance
+ipcMain.handle('instances-cleanup-orphans', () => {
+  try {
+    const instances = store.get('instances', []);
+    const kept = new Set();
+    for (const inst of instances) {
+      if (inst.folderName) kept.add(inst.folderName);
+      kept.add(inst.id);
+    }
+    const all = fs.readdirSync(INSTANCES_DIR);
+    const orphans = all.filter(f => !kept.has(f) && !f.startsWith('_import_tmp_'));
+    for (const f of orphans) {
+      fs.rmSync(path.join(INSTANCES_DIR, f), { recursive: true, force: true });
+    }
+    return { success: true, removed: orphans.length, folders: orphans };
+  } catch(e) { return { success: false, error: e.message }; }
+});
+
+// Delete instance folder on disk when the instance is removed from the launcher
+ipcMain.handle('instance-delete-folder', (_, instanceId) => {
+  try {
+    const dir = getInstanceDir(instanceId);
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    // Also remove any ID-based fallback folder
+    const idDir = path.join(INSTANCES_DIR, instanceId);
+    if (idDir !== dir && fs.existsSync(idDir)) fs.rmSync(idDir, { recursive: true, force: true });
+    return { success: true };
+  } catch(e) { return { success: false, error: e.message }; }
+});
+
+// Measure TCP latency to a Minecraft server (port 25565)
+ipcMain.handle('net-ping-server', (_, { host, port = 25565 }) => {
+  const net = require('net');
+  return new Promise(resolve => {
+    const start = Date.now();
+    const sock = new net.Socket();
+    sock.setTimeout(3000);
+    sock.connect(parseInt(port), host, () => {
+      const ms = Date.now() - start;
+      sock.destroy();
+      resolve({ ms });
+    });
+    sock.on('error', e => resolve({ ms: null, error: e.message }));
+    sock.on('timeout', () => { sock.destroy(); resolve({ ms: null, error: 'Timeout' }); });
+  });
+});
+
+// Set network adapters to use Cloudflare + Google DNS via elevated PowerShell
+ipcMain.handle('net-set-dns', () => {
+  const os = require('os');
+  const tmp = path.join(os.tmpdir(), 'celery-dns.ps1');
+  try {
+    fs.writeFileSync(tmp, [
+      '$adapters = Get-NetAdapter | Where-Object {$_.Status -eq "Up"}',
+      'foreach ($a in $adapters) {',
+      '  Set-DnsClientServerAddress -InterfaceAlias $a.Name -ServerAddresses @("1.1.1.1","1.0.0.1","8.8.8.8","8.8.4.4")',
+      '}',
+      'ipconfig /flushdns',
+    ].join('\r\n'), 'utf8');
+    const { exec } = require('child_process');
+    exec(`powershell -Command "Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -File \\"${tmp}\\"'"`);
+    return { success: true };
+  } catch(e) { return { success: false, error: e.message }; }
+});
+
+// Rename instance folder on disk when user renames the instance
+ipcMain.handle('instance-rename-folder', (_, {instanceId, newFolderName}) => {
+  try {
+    const oldDir = getInstanceDir(instanceId);
+    const newDir = path.join(INSTANCES_DIR, newFolderName);
+    if (oldDir !== newDir && fs.existsSync(oldDir)) {
+      if (fs.existsSync(newDir)) return { success: false, error: 'A folder named "' + newFolderName + '" already exists' };
+      fs.renameSync(oldDir, newDir);
+    }
+    return { success: true };
+  } catch(e) { return { success: false, error: e.message }; }
+});
 
 // Instance folder ops — use getInstanceDir for named folders
 ipcMain.handle('instance-list-folder', (_,{instanceId,folder}) => {
